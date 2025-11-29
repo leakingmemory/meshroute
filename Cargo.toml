@@ -1,0 +1,9 @@
+[package]
+name = "meshroute"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+getopts = "0.2.23"
+bson = { version = "3.1.0", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
