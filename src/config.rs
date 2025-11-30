@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::ErrorKind;
 use serde::{Deserialize, Serialize};
+use crate::keyex;
 
 #[derive(Serialize, Deserialize)]
 pub struct ConfigRecord {
@@ -16,16 +17,9 @@ pub struct ConfigBase {
     pub data: Vec<ConfigRecord>
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct RsaKeyPair {
-    #[serde(with = "serde_bytes")]
-    pub private_key: Vec<u8>,
-    #[serde(with = "serde_bytes")]
-    pub public_key: Vec<u8>
-}
-
 pub struct Config {
-    pub master_key: Option<RsaKeyPair>
+    pub master_key: Option<keyex::RsaKeyPair>,
+    pub node_key: Option<keyex::NodeKey>
 }
 
 impl ConfigBase {
@@ -93,24 +87,9 @@ impl ConfigBase {
     }
 }
 
-impl RsaKeyPair {
-    pub fn serialize(&self) -> Result<Vec<u8>,()> {
-        match bson::serialize_to_vec(self) {
-            Ok(v) => Ok(v),
-            Err(_) => Err(())
-        }
-    }
-    pub fn deserialize(data: &[u8]) -> Result<Self,()> {
-        match bson::deserialize_from_slice::<Self>(data) {
-            Ok(c) => Ok(c),
-            Err(_) => Err(())
-        }
-    }
-}
-
 impl Config {
     pub fn new() -> Self {
-        Self { master_key: None }
+        Self { master_key: None, node_key: None }
     }
     pub fn from_file(filename: &str) -> Result<Self,()> {
         let config = match match ConfigBase::from_file(filename) {
@@ -122,7 +101,7 @@ impl Config {
         };
         let master_key_record = config.get_single_by_name("master_key");
         let master_key = match master_key_record {
-            Some(r) => match RsaKeyPair::deserialize(r.data.as_slice()) {
+            Some(r) => match keyex::RsaKeyPair::deserialize(r.data.as_slice()) {
                 Ok(k) => Some(k),
                 Err(_) => {
                     println!("Failed to deserialize master key, ignoring");
@@ -131,7 +110,18 @@ impl Config {
             },
             None => None
         };
-        Ok(Self { master_key })
+        let node_key_record = config.get_single_by_name("node_key");
+        let node_key = match node_key_record {
+            Some(r) => match keyex::NodeKey::deserialize(r.data.as_slice()) {
+                Ok(k) => Some(k),
+                Err(_) => {
+                    println!("Failed to deserialize node key, ignoring");
+                    return Err(())
+                }
+            },
+            None => None
+        };
+        Ok(Self { master_key, node_key })
     }
     pub fn save(&self, filename: &str) -> Result<(),()> {
         let mut config_base = ConfigBase::new();
@@ -144,6 +134,16 @@ impl Config {
                 }
             };
             config_base.data.push(ConfigRecord { name: "master_key".to_string(), data: master_key_data });
+        }
+        if let Some(node_key) = &self.node_key {
+            let node_key_data = match node_key.serialize() {
+                Ok(d) => d,
+                Err(_) => {
+                    println!("Failed to serialize node key");
+                    return Err(())
+                }
+            };
+            config_base.data.push(ConfigRecord { name: "node_key".to_string(), data: node_key_data });
         }
         config_base.save(filename)
     }

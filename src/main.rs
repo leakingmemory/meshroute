@@ -4,6 +4,7 @@ mod controlproto;
 mod ping;
 mod control;
 mod config;
+mod keyex;
 
 use std::env;
 use std::process::ExitCode;
