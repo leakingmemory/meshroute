@@ -3,6 +3,7 @@ mod opts;
 mod controlproto;
 mod ping;
 mod control;
+mod config;
 
 use std::env;
 use std::process::ExitCode;

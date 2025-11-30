@@ -3,7 +3,9 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::ExitCode;
 use std::thread;
 use std::thread::JoinHandle;
-use crate::{controlproto, opts};
+use rsa::{RsaPrivateKey, RsaPublicKey};
+use rsa::pkcs1::{EncodeRsaPrivateKey, EncodeRsaPublicKey};
+use crate::{config, controlproto, opts};
 use crate::controlproto::Command;
 
 fn handle_control(name: &str, mut stream: UnixStream) {
@@ -86,6 +88,50 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
             println!("failed to lock lock file: {}", lock_file_name);
             return ExitCode::from(1);
         }
+    }
+    let mut config = match config::Config::from_file(config_file_name.as_str()) {
+        Ok(config) => config,
+        Err(_) => return ExitCode::from(1)
+    };
+    if config.master_key.is_none() {
+        println!("Generating master key for this node");
+        let mut rnd = rsa::rand_core::OsRng;
+        let bits = 4096;
+        let priv_key = match RsaPrivateKey::new(&mut rnd, bits) {
+            Ok(k) => k,
+            Err(_) => {
+                println!("Failed to generate master key");
+                return ExitCode::from(1);
+            }
+        };
+        let pub_key = RsaPublicKey::from(&priv_key);
+        let priv_key_der = match priv_key.to_pkcs1_der() {
+            Ok(d) => d,
+            Err(_) => {
+                println!("Failed to serialize master key as der");
+                return ExitCode::from(1);
+            }
+        };
+        let pub_key_der = match pub_key.to_pkcs1_der() {
+            Ok(d) => d,
+            Err(_) => {
+                println!("Failed to serialize master key (public part) as der");
+                return ExitCode::from(1);
+            }
+        };
+        let priv_key_bytes = priv_key_der.as_bytes();
+        let pub_key_bytes = pub_key_der.as_bytes();
+        config.master_key = Some(config::RsaKeyPair {
+            private_key: priv_key_bytes.to_vec(),
+            public_key: pub_key_bytes.to_vec()
+        });
+        match config.save(config_file_name.as_str()) {
+            Ok(_) => {},
+            Err(_) => {
+                println!("Failed to save config with new master key");
+                return ExitCode::from(1);
+            }
+        };
     }
     match std::fs::remove_file(socket_file_name.clone()) {
         Ok(_) => {},
