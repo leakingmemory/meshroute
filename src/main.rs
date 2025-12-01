@@ -5,6 +5,10 @@ mod ping;
 mod control;
 mod config;
 mod keyex;
+mod filedes;
+mod forkedworker;
+mod eventproto;
+mod ethernet;
 
 use std::env;
 use std::process::ExitCode;
