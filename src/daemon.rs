@@ -1,19 +1,24 @@
 use std::ffi::CStr;
-use std::io::{pipe, Read, Write};
+use std::io::{pipe, PipeReader, PipeWriter, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
+use bson::{deserialize_from_slice, serialize_to_vec};
 use rsa::signature::{SignatureEncoding, Signer, Verifier};
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use rsa::pkcs1::{DecodeRsaPublicKey, EncodeRsaPublicKey};
 use rsa::pkcs1v15::Signature;
 use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey};
-use crate::{config, controlproto, ethernet, filedes, forkedworker, keyex, opts};
+use crate::{config, controlproto, ethernet, ethertable, eventproto, filedes, forkedworker, keyex, opts};
 use crate::controlproto::Command;
+use crate::controlproto::ControlMsgType::HOST_PACKET;
+use crate::ethernet::EthernetAddress;
+use crate::ethertable::MacEntryLocation::LOCAL;
+use crate::eventproto::EventType;
 
-fn handle_control(name: &str, mut stream: UnixStream) {
+fn handle_control(name: &str, mut stream: UnixStream, event_handler: Arc<Mutex<EventHandlerCtx>>) {
     let greeting = controlproto::Greeting {
         name: name.to_string(),
         major: 0,
@@ -52,8 +57,14 @@ fn handle_control(name: &str, mut stream: UnixStream) {
         }
         let cmd = u32::from_be_bytes(cmdbuf);
         const EXIT: u32 = Command::EXIT as u32;
+        const CAPTURE: u32 = Command::CAPTURE as u32;
         match cmd {
             EXIT => return,
+            CAPTURE => {
+                let mut event_handler = event_handler.lock().unwrap();
+                event_handler.capture_streams.push(stream);
+                return
+            }
             _ => {
                 println!("Unknown command: {}", cmd);
                 return;
@@ -71,24 +82,53 @@ pub struct TunIfreq {
 }
 
 pub struct EthernetHandlerCtx {
-    pub frame: ethernet::EthernetFrame
+    pub frame: ethernet::EthernetFrame,
+    pub event_writer: PipeWriter,
+    pub mac_table: ethertable::MacTable
 }
 
 impl EthernetHandlerCtx {
-    pub fn new() -> Self {
+    pub fn new(event_writer: PipeWriter) -> Self {
         Self {
-            frame: ethernet::EthernetFrame::new()
+            frame: ethernet::EthernetFrame::new(),
+            event_writer,
+            mac_table: ethertable::MacTable::new()
         }
     }
 }
 
-pub fn handle_ethernet_frame(frame: &ethernet::EthernetFrame) {
-    println!("[{}] {:x?} -> {:x?} {:x?} {}", if frame.is_multicast() { "multi" } else { "single" }, frame.src_mac, frame.dst_mac, frame.ethertype, frame.payload.len())
+pub fn handle_ethernet_frame(ctx: &mut EthernetHandlerCtx) -> Result<(),()> {
+    if (&ctx.frame.src_mac).is_individual() {
+        ctx.mac_table.borrow_entry(&ctx.frame.src_mac, |entry| {
+            entry.location = LOCAL;
+        })
+    }
+    match serialize_to_vec(&ctx.frame) {
+        Ok(data) => {
+            let hdr = eventproto::EventHeader {
+                data_len: data.len() as u32,
+                event_type: eventproto::EventType::HostPacket
+            };
+            let hdr = hdr.to_bytes();
+            match match ctx.event_writer.write_all(&hdr) {
+                Ok(_) => ctx.event_writer.write_all(&data),
+                Err(_) => return Err(())
+            } {
+                Ok(_) => Ok(()),
+                Err(_) => return Err(())
+            }
+        },
+        Err(_) => {
+            println!("Failed to serialize ethernet frame event");
+            return Err(());
+        }
+    }
 }
 
-pub fn handle_ethernet(ctx: &mut EthernetHandlerCtx, data: &[u8]) {
+pub fn handle_ethernet(ctx: &mut EthernetHandlerCtx, data: &[u8]) -> Result<(),()> {
     if data.len() < 18 {
-        return;
+        println!("Invalid ethernet frame: too short");
+        return Ok(());
     }
     for i in 0..6 {
         ctx.frame.dst_mac[i] = data[i];
@@ -103,7 +143,105 @@ pub fn handle_ethernet(ctx: &mut EthernetHandlerCtx, data: &[u8]) {
     for i in 14..data.len() {
         ctx.frame.payload[i-14] = data[i];
     }
-    handle_ethernet_frame(&ctx.frame);
+    handle_ethernet_frame(ctx)
+}
+
+pub struct EventHandlerCtx {
+    pub capture_streams: Vec<UnixStream>
+}
+
+impl EventHandlerCtx {
+    pub fn new() -> Self {
+        Self {
+            capture_streams: Vec::new()
+        }
+    }
+}
+
+pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCtx>>) {
+    let mut event_buf: Vec<u8> = Vec::new();
+    loop {
+        let hdr;
+        {
+            let mut hdrbuf = [0u8; 6];
+            let mut hdroff = 0;
+            loop {
+                match event_reader.read(&mut hdrbuf[hdroff..]) {
+                    Ok(len) => { hdroff += len; },
+                    Err(_) => {
+                        println!("Failed to read event header");
+                    }
+                }
+                if hdroff >= 6 { break; }
+            }
+            hdr = match eventproto::EventHeader::from_bytes(&hdrbuf) {
+                Ok(hdr) => hdr,
+                Err(_) => {
+                    println!("Failed to deserialize event header");
+                    return;
+                }
+            };
+        }
+        event_buf.resize(hdr.data_len as usize, 0);
+        {
+            let mut dataoff = 0;
+            loop {
+                match event_reader.read(&mut event_buf[dataoff..]) {
+                    Ok(len) => { dataoff += len; },
+                    Err(_) => {
+                        println!("Failed to read event data");
+                        return;
+                    }
+                }
+                if dataoff >= hdr.data_len as usize { break; }
+            }
+        }
+        let mut ctx = ctx.lock().unwrap();
+        match hdr.event_type {
+            EventType::HostPacket => {
+                let frame: ethernet::EthernetFrame = match deserialize_from_slice(event_buf.as_slice()) {
+                    Ok(p) => p,
+                    Err(_) => {
+                        println!("Failed to deserialize host packet event");
+                        return;
+                    }
+                };
+                println!(">> [{}] {:x?} -> {:x?} {:x?} {}", if frame.is_multicast() { "multi" } else { "single" }, frame.src_mac, frame.dst_mac, frame.ethertype, frame.payload.len());
+                if !ctx.capture_streams.is_empty() {
+                    let hdr = controlproto::ControlMsgHdr {
+                        len: event_buf.len() as u32,
+                        msg_type: HOST_PACKET
+                    };
+                    let hdr = hdr.to_bytes();
+                    ctx.capture_streams.retain_mut(|stream| {
+                        let hdrlen = match stream.write(&hdr) {
+                            Ok(len) => len,
+                            Err(_) => {
+                                println!("Failed to write control message header");
+                                return false;
+                            }
+                        };
+                        if hdrlen != hdr.len() {
+                            println!("Failed to write control message header: short write");
+                            return false;
+                        }
+                        let msglen = match stream.write(event_buf.as_slice()) {
+                            Ok(len) => len,
+                            Err(_) => {
+                                println!("Failed to write control message data");
+                                return false;
+                            }
+                        };
+                        if msglen != event_buf.len() {
+                            println!("Failed to write control message data: short write");
+                            return false;
+                        }
+                        true
+                    });
+                }
+            }
+        }
+    }
 }
 
 pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
@@ -321,6 +459,8 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
         }
     }
     println!("Configured ethernet device {}", unsafe { CStr::from_ptr(ifreq.ifr_name.as_ptr() as *const libc::c_char) }.to_str().unwrap());
+    let eventworker_ctx = Arc::new(Mutex::new(EventHandlerCtx::new()));
+    let eventworker_thread;
     let forkedworker;
     {
         let event_reader;
@@ -335,7 +475,7 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
             };
             forkedworker = match forkedworker::ForkedWorker::new(|| {
                 let mut pktbuf: Vec<u8> = Vec::new();
-                let mut handlerctx = EthernetHandlerCtx::new();
+                let mut handlerctx = EthernetHandlerCtx::new(event_writer);
                 loop {
                     pktbuf.resize(65536, 0);
                     {
@@ -348,7 +488,13 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
                         };
                         pktbuf.truncate(size);
                     }
-                    handle_ethernet(&mut handlerctx, pktbuf.as_slice());
+                    match handle_ethernet(&mut handlerctx, pktbuf.as_slice()) {
+                        Ok(_) => {},
+                        Err(_) => {
+                            println!("Failed to handle ethernet frame");
+                            return 1;
+                        }
+                    }
                 }
             }) {
                 Ok(w) => w,
@@ -358,12 +504,17 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
                 }
             };
         }
+        let eventworker_ctx = eventworker_ctx.clone();
+        eventworker_thread = thread::spawn(move || event_handler(event_reader, eventworker_ctx));
     }
     let mut control_clients: Vec<Option<JoinHandle<()>>> = Vec::new();
     for stream in control_listener.incoming() {
         let name = name.to_string();
         match stream {
-            Ok(stream) => control_clients.push(Some(thread::spawn(move || handle_control(name.as_str(), stream)))),
+            Ok(stream) => {
+                let event_handler_ctx = eventworker_ctx.clone();
+                control_clients.push(Some(thread::spawn(move || handle_control(name.as_str(), stream, event_handler_ctx))))
+            },
             Err(_) => {
                 println!("Failed to accept control connection on control socket: {}", socket_file_name);
             }

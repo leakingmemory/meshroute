@@ -1,11 +1,12 @@
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use crate::{controlproto, opts};
-use crate::controlproto::Command;
+use crate::controlproto::{Command, ControlMsgHdr};
 
 pub struct ControlClient {
     pub greeting: controlproto::Greeting,
-    pub stream: UnixStream
+    pub stream: UnixStream,
+    pub buffer: Vec<u8>
 }
 
 pub fn connect_control(opts: &opts::Opts, name: &str) -> Result<ControlClient, ()> {
@@ -46,7 +47,8 @@ pub fn connect_control(opts: &opts::Opts, name: &str) -> Result<ControlClient, (
             return Err(());
         }
     };
-    Ok(ControlClient { greeting, stream })
+    let buffer: Vec<u8> = Vec::new();
+    Ok(ControlClient { greeting, stream, buffer })
 }
 
 impl ControlClient {
@@ -55,5 +57,31 @@ impl ControlClient {
             Ok(_) => Ok(()),
             Err(_) => Err(())
         }
+    }
+    pub(crate) fn receive<F,T>(&mut self, func: F) -> Result<T,()>
+    where F: FnOnce(&ControlMsgHdr, &[u8]) -> Result<T,()> {
+        let mut hdrbuf = [0u8; 8];
+        let mut off = 0;
+        while off < hdrbuf.len() {
+            let rd = match self.stream.read(&mut hdrbuf[off..]) {
+                Ok(r) => r,
+                Err(_) => return Err(())
+            };
+            off += rd;
+        }
+        let hdr = match ControlMsgHdr::from_bytes(&hdrbuf) {
+            Ok(h) => h,
+            Err(_) => return Err(())
+        };
+        self.buffer.resize(hdr.len as usize, 0u8);
+        off = 0;
+        while off < self.buffer.len() {
+            let rd = match self.stream.read(&mut self.buffer[off..]) {
+                Ok(r) => r,
+                Err(_) => return Err(())
+            };
+            off += rd;
+        }
+        func(&hdr, &self.buffer)
     }
 }
