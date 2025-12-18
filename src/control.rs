@@ -1,5 +1,7 @@
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
+use bson::serialize_to_vec;
+use serde::Serialize;
 use crate::{controlproto, opts};
 use crate::controlproto::{Command, ControlMsgHdr};
 
@@ -56,6 +58,36 @@ impl ControlClient {
         match self.stream.write((cmd as u32).to_be_bytes().as_slice()) {
             Ok(_) => Ok(()),
             Err(_) => Err(())
+        }
+    }
+    pub(crate) fn command_with_object<T>(&mut self, cmd: Command, obj: &T) -> Result<(), ()>
+    where T: Serialize {
+        let len = match self.stream.write((cmd as u32).to_be_bytes().as_slice()) {
+            Ok(len) => len,
+            Err(_) => return Err(())
+        };
+        if len != 4 {
+            return Err(());
+        }
+        let vec = match serialize_to_vec::<T>(obj) {
+            Ok(vec) => vec,
+            Err(_) => return Err(())
+        };
+        let len = match self.stream.write((vec.len() as u32).to_be_bytes().as_slice()) {
+            Ok(len) => len,
+            Err(_) => return Err(())
+        };
+        if len != 4 {
+            return Err(());
+        }
+        let len = match self.stream.write(vec.as_slice()) {
+            Ok(len) => len,
+            Err(_) => return Err(())
+        };
+        if len == vec.len() {
+            Ok(())
+        } else {
+            Err(())
         }
     }
     pub(crate) fn receive<F,T>(&mut self, func: F) -> Result<T,()>

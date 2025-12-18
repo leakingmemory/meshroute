@@ -1,5 +1,6 @@
 use std::ffi::CStr;
 use std::io::{pipe, PipeReader, PipeWriter, Read, Write};
+use std::net::TcpListener;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
@@ -11,20 +12,54 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 use rsa::pkcs1::{DecodeRsaPublicKey, EncodeRsaPublicKey};
 use rsa::pkcs1v15::Signature;
 use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey};
-use crate::{config, controlproto, ethernet, ethertable, eventproto, filedes, forkedworker, keyex, opts};
+use serde::de::DeserializeOwned;
+use crate::{config, controlproto, ethernet, ethertable, eventproto, filedes, handshake, keyex, opts};
 use crate::controlproto::Command;
 use crate::controlproto::ControlMsgType::HOST_PACKET;
 use crate::ethernet::EthernetAddress;
 use crate::ethertable::MacEntryLocation::LOCAL;
 use crate::eventproto::EventType;
+use crate::forkedworker::ForkedWorker;
 
-fn handle_control(name: &str, mut stream: UnixStream, event_handler: Arc<Mutex<EventHandlerCtx>>) {
+fn read_control_object<T>(stream: &mut UnixStream) -> Result<T,()> where T: DeserializeOwned {
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let len: u32;
+        {
+            let mut buf: [u8; 4] = [0u8; 4];
+            let mut off = 0;
+            while off < buf.len() {
+                let rd = match stream.read(&mut buf[off..]) {
+                    Ok(rd) => rd,
+                    Err(_) => return Err(())
+                };
+                off += rd;
+            }
+            len = u32::from_be_bytes(buf);
+        }
+        buf.resize(len as usize, 0);
+    }
+    let mut off = 0;
+    while off < buf.len() {
+        let rd = match stream.read(&mut buf[off..]) {
+            Ok(rd) => rd,
+            Err(_) => return Err(())
+        };
+        off += rd;
+    }
+    match deserialize_from_slice(&buf) {
+        Ok(obj) => Ok(obj),
+        Err(_) => Err(())
+    }
+}
+
+fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, event_handler: Arc<Mutex<EventHandlerCtx>>, config: Arc<Mutex<config::Config>>, ctx: &WorkerContextThreadSafe) {
     let greeting = controlproto::Greeting {
         name: name.to_string(),
         major: 0,
         minor: 0
     };
-    let msg = match bson::serialize_to_vec(&greeting) {
+    let msg = match serialize_to_vec(&greeting) {
         Ok(msg) => msg,
         Err(_) => {
             println!("Failed to serialize greeting for control protocol");
@@ -58,12 +93,38 @@ fn handle_control(name: &str, mut stream: UnixStream, event_handler: Arc<Mutex<E
         let cmd = u32::from_be_bytes(cmdbuf);
         const EXIT: u32 = Command::EXIT as u32;
         const CAPTURE: u32 = Command::CAPTURE as u32;
+        const LISTEN: u32 = Command::LISTEN as u32;
         match cmd {
             EXIT => return,
             CAPTURE => {
                 let mut event_handler = event_handler.lock().unwrap();
                 event_handler.capture_streams.push(stream);
                 return
+            },
+            LISTEN => {
+                let listen_ctrl = match read_control_object::<controlproto::ListenCmd>(&mut stream) {
+                    Ok(l) => l,
+                    Err(_) => {
+                        println!("Failed to read listen object");
+                        return;
+                    }
+                };
+                let mut config = config.lock().unwrap();
+                if !listen_ctrl.listen.is_empty() {
+                    println!("Changing listening setting from {} to {}", if let Some(ref listen) = config.listen { listen.as_str() } else { "None" }, listen_ctrl.listen.as_str());
+                    config.listen = Some(listen_ctrl.listen);
+                } else {
+                    println!("Changing listening setting from {} to None", if let Some(ref listen) = config.listen { listen.as_str() } else { "None" });
+                    config.listen = None;
+                }
+                match config.save(config_file_name) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        println!("Failed to save new config");
+                        return;
+                    }
+                }
+                ctx.restart_me();
             }
             _ => {
                 println!("Unknown command: {}", cmd);
@@ -107,7 +168,7 @@ pub fn handle_ethernet_frame(ctx: &mut EthernetHandlerCtx) -> Result<(),()> {
         Ok(data) => {
             let hdr = eventproto::EventHeader {
                 data_len: data.len() as u32,
-                event_type: eventproto::EventType::HostPacket
+                event_type: EventType::HostPacket
             };
             let hdr = hdr.to_bytes();
             match match ctx.event_writer.write_all(&hdr) {
@@ -115,12 +176,12 @@ pub fn handle_ethernet_frame(ctx: &mut EthernetHandlerCtx) -> Result<(),()> {
                 Err(_) => return Err(())
             } {
                 Ok(_) => Ok(()),
-                Err(_) => return Err(())
+                Err(_) => Err(())
             }
         },
         Err(_) => {
             println!("Failed to serialize ethernet frame event");
-            return Err(());
+            Err(())
         }
     }
 }
@@ -244,7 +305,188 @@ pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCt
     }
 }
 
+struct WorkerContext {
+    pub config: Arc<Mutex<config::Config>>,
+    pub event_writer: PipeWriter,
+    pub tap_dev: filedes::FileDes
+}
+
+impl Clone for WorkerContext {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            event_writer: self.event_writer.try_clone().unwrap(),
+            tap_dev: self.tap_dev.clone()
+        }
+    }
+}
+
+impl WorkerContext {
+    pub fn run_worker(&mut self) -> libc::c_int {
+        println!("Network worker process initializing");
+        let mut handlerctx = EthernetHandlerCtx::new(match self.event_writer.try_clone() {
+            Ok(pw) => pw,
+            Err(_) => {
+                println!("Failed to clone event writer");
+                return 1;
+            }
+        });
+        let listen_addr;
+        {
+            let config = self.config.lock().unwrap();
+            listen_addr = config.listen.clone();
+        }
+        if let Some(listen_addr) = listen_addr {
+            println!("Listening on tcp {}", listen_addr);
+            let listen_socket = match TcpListener::bind(listen_addr.as_str()) {
+                Ok(s) => Some(s),
+                Err(_) => {
+                    println!("Failed to start listening socket {}", listen_addr);
+                    None
+                }
+            };
+            if let Some(listen_socket) = listen_socket {
+                let config = self.config.clone();
+                let network_listener = thread::spawn(move || {
+                    for connection in listen_socket.incoming() {
+                        let mut connection = match connection {
+                            Ok(c) => c,
+                            Err(_) => {
+                                println!("Handling connection listening failed");
+                                break;
+                            }
+                        };
+                        match handshake::run_server_handshake(&mut connection, &config) {
+                            Ok(_) => {},
+                            Err(_) => continue
+                        }
+                    }
+                });
+            }
+        } else {
+            println!("No listening socket configured");
+        }
+        let mut pktbuf: Vec<u8> = Vec::new();
+        loop {
+            pktbuf.resize(65536, 0);
+            {
+                let size = match self.tap_dev.read(pktbuf.as_mut_slice()) {
+                    Ok(size) => size,
+                    Err(_) => {
+                        println!("Failed to read from tap device");
+                        return 1;
+                    }
+                };
+                pktbuf.truncate(size);
+            }
+            match handle_ethernet(&mut handlerctx, pktbuf.as_slice()) {
+                Ok(_) => {},
+                Err(_) => {
+                    println!("Failed to handle ethernet frame");
+                    return 1;
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+struct WorkerContextThreadSafe {
+    pub restart_me_writer: Arc<Mutex<PipeWriter>>,
+    pub forkedworker: Arc<Mutex<Option<ForkedWorker>>>,
+    pub ctx: Arc<Mutex<WorkerContext>>
+}
+
+impl WorkerContextThreadSafe {
+    pub fn run_worker_process(&self) {
+        let mut ctx;
+        {
+            let lctx = self.ctx.lock().unwrap();
+            ctx = lctx.clone();
+        }
+        let mut forkedworker = self.forkedworker.lock().unwrap().take();
+        if let Some(_forkedworker) = forkedworker.take() {
+            println!("Stopping network worker process");
+        }
+        println!("Starting network worker process");
+        let pid = unsafe { libc::fork() };
+        if pid < 0 {
+            println!("Failed to fork worker process");
+            return;
+        } else if (pid == 0) {
+            println!("Spawned as child process");
+            ctx.run_worker();
+            std::process::exit(0);
+        }
+        println!("Network worker process spawned {}", pid);
+        let forkedworker = ForkedWorker::new_from_pid(pid);
+        let mut fw = self.forkedworker.lock().unwrap();
+        if (fw.is_none()) {
+            fw.replace(forkedworker);
+        } else {
+            println!("Stopping worker due to simultaneous start");
+        }
+        println!("Network worker process spawned");
+    }
+    pub fn restart_me(&self) {
+        let mut forkedworker = self.forkedworker.lock().unwrap().take();
+        if let Some(_forkedworker) = forkedworker.take() {
+            println!("Stopping network worker process");
+        }
+        println!("Requesting restart");
+        let buf = [1u8];
+        match self.restart_me_writer.lock().unwrap().write(&buf) {
+            Ok(_) => {},
+            Err(_) => {
+                println!("Failed to write to restart pipe");
+            }
+        }
+        std::process::exit(0);
+    }
+}
+
 pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
+    loop {
+        let mut restart_me_reader;
+        let mut restart_me_writer;
+        (restart_me_reader, restart_me_writer) = match pipe() {
+            Ok(endpoints) => endpoints,
+            Err(_) => {
+                println!("Failed to create pipe for event channel");
+                return ExitCode::from(1);
+            }
+        };
+        let pid = unsafe { libc::fork() };
+        if (pid < 0) {
+            println!("Failed to fork daemon process");
+            return run_daemon_w(&mut restart_me_writer, opts, name)
+        } else if (pid == 0) {
+            println!("Spawned as child process");
+            return run_daemon_w(&mut restart_me_writer, opts, name);
+        } else {
+            let mut buf = [0u8; 1];
+            let rd = match restart_me_reader.read(&mut buf) {
+                Ok(s) => s,
+                Err(_) => {
+                    println!("Failed to read from restart pipe");
+                    unsafe { libc::kill(pid, libc::SIGTERM); }
+                    unsafe { libc::waitpid(pid, std::ptr::null_mut(), 0); }
+                    return ExitCode::from(1);
+                }
+            };
+            if (rd == 0) {
+                println!("No restart requested");
+                unsafe { libc::kill(pid, libc::SIGTERM); }
+                unsafe { libc::waitpid(pid, std::ptr::null_mut(), 0); }
+                return ExitCode::from(0);
+            }
+            unsafe { libc::kill(pid, libc::SIGTERM); }
+            unsafe { libc::waitpid(pid, std::ptr::null_mut(), 0); }
+        }
+    }
+}
+
+pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name: &str) -> ExitCode {
     let mut config_file_name = opts.config_dir.clone();
     if !config_file_name.ends_with('/') {
         config_file_name.push('/');
@@ -331,7 +573,7 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
         }
         if let Some(ref nodekey) = config.node_key {
             println!("Verifying the current node key");
-            let public_key = match rsa::RsaPublicKey::from_pkcs1_der(match config.master_key {
+            let public_key = match RsaPublicKey::from_pkcs1_der(match config.master_key {
                 Some(ref master_key) => master_key,
                 None => {
                     println!("Failed to load master key. Cannot verify node key.");
@@ -442,7 +684,7 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
         ifr_flags: (libc::IFF_TAP | libc::IFF_NO_PI) as libc::c_short,
         ifr_pad: [0u8; 22]
     };
-    if (name.len() < 16) {
+    if name.len() < 16 {
         for i in 0..name.len() {
             ifreq.ifr_name[i] = name.as_bytes()[i] as libc::c_char;
         }
@@ -461,7 +703,7 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
     println!("Configured ethernet device {}", unsafe { CStr::from_ptr(ifreq.ifr_name.as_ptr() as *const libc::c_char) }.to_str().unwrap());
     let eventworker_ctx = Arc::new(Mutex::new(EventHandlerCtx::new()));
     let eventworker_thread;
-    let forkedworker;
+    let ctx: WorkerContextThreadSafe;
     {
         let event_reader;
         {
@@ -473,36 +715,9 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
                     return ExitCode::from(1);
                 }
             };
-            forkedworker = match forkedworker::ForkedWorker::new(|| {
-                let mut pktbuf: Vec<u8> = Vec::new();
-                let mut handlerctx = EthernetHandlerCtx::new(event_writer);
-                loop {
-                    pktbuf.resize(65536, 0);
-                    {
-                        let size = match tap_dev.read(pktbuf.as_mut_slice()) {
-                            Ok(size) => size,
-                            Err(_) => {
-                                println!("Failed to read from tap device");
-                                return 1;
-                            }
-                        };
-                        pktbuf.truncate(size);
-                    }
-                    match handle_ethernet(&mut handlerctx, pktbuf.as_slice()) {
-                        Ok(_) => {},
-                        Err(_) => {
-                            println!("Failed to handle ethernet frame");
-                            return 1;
-                        }
-                    }
-                }
-            }) {
-                Ok(w) => w,
-                Err(_) => {
-                    println!("Failed to fork worker process");
-                    return ExitCode::from(1);
-                }
-            };
+            let forkedworker: Option<ForkedWorker> = None;
+            ctx = WorkerContextThreadSafe { restart_me_writer: Arc::new(Mutex::new(restart_me_writer.try_clone().unwrap())), forkedworker: Arc::new(Mutex::new(forkedworker)), ctx: Arc::new(Mutex::new(WorkerContext {config: config.clone(), event_writer, tap_dev})) };
+            ctx.run_worker_process();
         }
         let eventworker_ctx = eventworker_ctx.clone();
         eventworker_thread = thread::spawn(move || event_handler(event_reader, eventworker_ctx));
@@ -512,8 +727,11 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
         let name = name.to_string();
         match stream {
             Ok(stream) => {
+                let config_file_name = config_file_name.clone();
                 let event_handler_ctx = eventworker_ctx.clone();
-                control_clients.push(Some(thread::spawn(move || handle_control(name.as_str(), stream, event_handler_ctx))))
+                let config = config.clone();
+                let ctx = ctx.clone();
+                control_clients.push(Some(thread::spawn(move || handle_control(config_file_name.as_str(), name.as_str(), stream, event_handler_ctx, config, &ctx))))
             },
             Err(_) => {
                 println!("Failed to accept control connection on control socket: {}", socket_file_name);

@@ -11,6 +11,8 @@ mod eventproto;
 mod ethernet;
 mod ethertable;
 mod capture;
+mod listen;
+mod handshake;
 
 use std::env;
 use std::process::ExitCode;
@@ -48,6 +50,13 @@ fn main() -> ExitCode {
             return ping::run_ping(&meshopts, &matches.free[1]);
         } else if matches.free[0] == "capture" {
             return capture::run_capture(&meshopts, &matches.free[1]);
+        } else if matches.free[0] == "listen" {
+            if matches.free.len() == 3 {
+                return listen::run_listen(&meshopts, &matches.free[1], &matches.free[2]);
+            } else {
+                print_usage(&program, opts);
+                return ExitCode::from(1);
+            }
         } else {
             print_usage(&program, opts);
             return ExitCode::from(1);

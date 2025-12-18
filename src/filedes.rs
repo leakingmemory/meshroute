@@ -42,6 +42,16 @@ impl FileDes {
     }
 }
 
+impl Clone for FileDes {
+    fn clone(&self) -> Self {
+        if self.fd >= 0 {
+            FileDes { fd: unsafe { libc::dup(self.fd) } }
+        } else {
+            FileDes::new()
+        }
+    }
+}
+
 impl Drop for FileDes {
     fn drop(&mut self) {
         self.close();

@@ -17,9 +17,11 @@ pub struct ConfigBase {
     pub data: Vec<ConfigRecord>
 }
 
+#[derive(Clone)]
 pub struct Config {
     pub master_key: Option<keyex::RsaKeyPair>,
-    pub node_key: Option<keyex::NodeKey>
+    pub node_key: Option<keyex::NodeKey>,
+    pub listen: Option<String>
 }
 
 impl ConfigBase {
@@ -89,7 +91,7 @@ impl ConfigBase {
 
 impl Config {
     pub fn new() -> Self {
-        Self { master_key: None, node_key: None }
+        Self { master_key: None, node_key: None, listen: None }
     }
     pub fn from_file(filename: &str) -> Result<Self,()> {
         let config = match match ConfigBase::from_file(filename) {
@@ -121,7 +123,12 @@ impl Config {
             },
             None => None
         };
-        Ok(Self { master_key, node_key })
+        let listen_record = config.get_single_by_name("listen");
+        let listen = match listen_record {
+            Some(l) => Some(str::from_utf8(&l.data).unwrap().to_string()),
+            None => None
+        };
+        Ok(Self { master_key, node_key, listen })
     }
     pub fn save(&self, filename: &str) -> Result<(),()> {
         let mut config_base = ConfigBase::new();
@@ -144,6 +151,16 @@ impl Config {
                 }
             };
             config_base.data.push(ConfigRecord { name: "node_key".to_string(), data: node_key_data });
+        }
+        if let Some(listen) = &self.listen {
+            let name = "listen".to_string();
+            let mut data: Vec<u8> = Vec::new();
+            {
+                let bts = listen.as_bytes();
+                data.resize(bts.len(), 0);
+                data.copy_from_slice(bts);
+            }
+            config_base.data.push(ConfigRecord { name, data });
         }
         config_base.save(filename)
     }

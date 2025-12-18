@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct RsaKeyPair {
     #[serde(with = "serde_bytes")]
     pub private_key: Vec<u8>,
@@ -17,6 +17,7 @@ pub struct NodeKeyBase {
     pub signature: Vec<u8>
 }
 
+#[derive(Clone)]
 pub struct NodeKey {
     pub key: RsaKeyPair,
     pub replace_after: chrono::DateTime<chrono::Utc>,
