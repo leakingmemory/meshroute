@@ -12,11 +12,17 @@ pub struct ListenCmd {
     pub listen: String
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct PairCmd {
+    pub addr: String
+}
+
 #[repr(u32)]
 pub enum Command {
     EXIT = 0,
     CAPTURE = 1,
     LISTEN = 2,
+    PAIR = 3,
 }
 
 #[repr(u32)]

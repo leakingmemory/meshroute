@@ -13,6 +13,7 @@ mod ethertable;
 mod capture;
 mod listen;
 mod handshake;
+mod pair;
 
 use std::env;
 use std::process::ExitCode;
@@ -57,6 +58,13 @@ fn main() -> ExitCode {
                 print_usage(&program, opts);
                 return ExitCode::from(1);
             }
+        } else if matches.free[0] == "pair" {
+            if matches.free.len() == 3 {
+                return pair::run_pair(&meshopts, &matches.free[1], &matches.free[2]);
+            } else {
+                print_usage(&program, opts);
+                return ExitCode::from(1);
+            }
         } else {
             print_usage(&program, opts);
             return ExitCode::from(1);
@@ -70,5 +78,9 @@ fn main() -> ExitCode {
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage:\n {} [options] daemon <name>\n", program);
+    print!("{}", opts.usage(&brief));
+    let brief = format!("Usage:\n {} [options] listen <name> <addr:port>\n", program);
+    print!("{}", opts.usage(&brief));
+    let brief = format!("Usage:\n {} [options] pair <name> <addr:port>\n", program);
     print!("{}", opts.usage(&brief));
 }

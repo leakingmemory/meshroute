@@ -1,6 +1,6 @@
 use std::ffi::CStr;
 use std::io::{pipe, PipeReader, PipeWriter, Read, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
@@ -94,6 +94,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
         const EXIT: u32 = Command::EXIT as u32;
         const CAPTURE: u32 = Command::CAPTURE as u32;
         const LISTEN: u32 = Command::LISTEN as u32;
+        const PAIR: u32 = Command::PAIR as u32;
         match cmd {
             EXIT => return,
             CAPTURE => {
@@ -125,7 +126,31 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                     }
                 }
                 ctx.restart_me();
-            }
+            },
+            PAIR => {
+                let pair_ctrl = match read_control_object::<controlproto::PairCmd>(&mut stream) {
+                    Ok(l) => l,
+                    Err(_) => {
+                        println!("Failed to read pair object");
+                        return;
+                    }
+                };
+                let mut connection = match TcpStream::connect(pair_ctrl.addr.as_str()) {
+                    Ok(c) => c,
+                    Err(_) => {
+                        println!("Failed to connect to {} for pairing.", pair_ctrl.addr);
+                        return;
+                    }
+                };
+                match handshake::run_client_handshake(&mut connection, &config) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        println!("Failed to shake hands with {} for pairing.", pair_ctrl.addr);
+                        return;
+                    }
+                }
+                println!("Handshake ok with {}", pair_ctrl.addr);
+            },
             _ => {
                 println!("Unknown command: {}", cmd);
                 return;

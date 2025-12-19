@@ -10,7 +10,10 @@ use rsa::RsaPublicKey;
 use rsa::signature::Verifier;
 use crate::config;
 
-pub fn send_pubkeys(connection: &mut TcpStream, config: &Arc<Mutex<config::Config>>) -> Result<(),()> {
+const PROTO_VERSION_MAJOR: u16 = 0;
+const PROTO_VERSION_MINOR: u16 = 0;
+
+pub fn send_pubkeys(connection: &mut TcpStream, config: &Arc<Mutex<config::Config>>, version_major: u16, version_minor: u16) -> Result<(),()> {
     let master_pubkey;
     let node_pubkey;
     let node_sig;
@@ -32,8 +35,6 @@ pub fn send_pubkeys(connection: &mut TcpStream, config: &Arc<Mutex<config::Confi
         };
     }
     let proto: u32 = 0x3E585E73;
-    let version_major: u16 = 0;
-    let version_minor: u16 = 0;
     let master_pubkey_size = master_pubkey.len() as u32;
     let node_pubkey_size = node_pubkey.len() as u32;
     let node_sig_size = node_sig.len() as u32;
@@ -191,7 +192,7 @@ const SERVER_MINOR_VERSION_MIN: [(u16, u16); 1] = [(0u16, 0u16)];
 const SERVER_MINOR_VERSION_MAX: [(u16, u16); 1] = [(0u16, 0u16)];
 
 pub fn run_server_handshake(connection: &mut TcpStream, config: &Arc<Mutex<config::Config>>) -> Result<RecvProtoAndKeys,()> {
-    match send_pubkeys(connection, config) {
+    match send_pubkeys(connection, config, PROTO_VERSION_MAJOR, PROTO_VERSION_MINOR) {
         Ok(_) => {},
         Err(_) => return Err(())
     }
@@ -218,6 +219,42 @@ pub fn run_server_handshake(connection: &mut TcpStream, config: &Arc<Mutex<confi
                 return Err(());
             }
         }
+    }
+    Ok(recv_pkeys)
+}
+
+const CLIENT_VERSION_MIN: u16 = 0;
+const CLIENT_VERSION_MAX: u16 = 0;
+const CLIENT_MINOR_VERSION_MIN: [(u16, u16); 1] = [(0u16, 0u16)];
+const CLIENT_MINOR_VERSION_MAX: [(u16, u16); 1] = [(0u16, 0u16)];
+pub fn run_client_handshake(connection: &mut TcpStream, config: &Arc<Mutex<config::Config>>) -> Result<RecvProtoAndKeys,()> {
+    let mut recv_pkeys = match recv_pubkeys(connection) {
+        Ok(r) => r,
+        Err(_) => return Err(())
+    };
+    if recv_pkeys.version_major < CLIENT_VERSION_MIN || recv_pkeys.version_major > CLIENT_VERSION_MAX {
+        println!("Protocol major version is out of acceptable range {}-{}: {}", CLIENT_VERSION_MIN, CLIENT_VERSION_MAX, recv_pkeys.version_major);
+        return Err(())
+    }
+    for minor_min in CLIENT_MINOR_VERSION_MIN {
+        if recv_pkeys.version_major == minor_min.0 {
+            if recv_pkeys.version_minor < minor_min.1 {
+                println!("Protocol minor version is out of acceptable range {}-: {}", minor_min.1, recv_pkeys.version_minor);
+                return Err(());
+            }
+        }
+    }
+    for minor_max in SERVER_MINOR_VERSION_MAX {
+        if recv_pkeys.version_major == minor_max.0 {
+            if recv_pkeys.version_minor > minor_max.1 {
+                println!("Protocol minor version is out of acceptable range -{}: {}, downgrading to {}", minor_max.1, recv_pkeys.version_minor, minor_max.1);
+                recv_pkeys.version_minor = minor_max.1;
+            }
+        }
+    }
+    match send_pubkeys(connection, config, recv_pkeys.version_major, recv_pkeys.version_minor) {
+        Ok(_) => {},
+        Err(_) => return Err(())
     }
     Ok(recv_pkeys)
 }
