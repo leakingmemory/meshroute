@@ -17,6 +17,12 @@ pub struct PairCmd {
     pub addr: String
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct PairResult {
+    pub master_pubkey_sha256: [u8; 32],
+    pub name: String
+}
+
 #[repr(u32)]
 pub enum Command {
     EXIT = 0,
@@ -28,7 +34,9 @@ pub enum Command {
 #[repr(u32)]
 #[derive(Clone)]
 pub enum ControlMsgType {
-    HOST_PACKET = 0
+    HOST_PACKET = 0,
+    PAIRING_RESPONSE = 1,
+    GENERIC_ERROR = 2
 }
 
 pub struct ControlMsgHdr {
@@ -52,8 +60,12 @@ impl ControlMsgHdr {
         pbuf.copy_from_slice(&bytes[4..8]);
         let msg_type = u32::from_be_bytes(pbuf);
         const HOST_PACKET: u32 = ControlMsgType::HOST_PACKET as u32;
+        const PAIRING_RESPONSE: u32 = ControlMsgType::PAIRING_RESPONSE as u32;
+        const GENERIC_ERROR: u32 = ControlMsgType::GENERIC_ERROR as u32;
         let msg_type = match msg_type {
             HOST_PACKET => ControlMsgType::HOST_PACKET,
+            PAIRING_RESPONSE => ControlMsgType::PAIRING_RESPONSE,
+            GENERIC_ERROR => ControlMsgType::GENERIC_ERROR,
             _ => return Err(())
         };
         Ok(Self { len, msg_type })

@@ -1,5 +1,7 @@
 use std::fs;
 use std::io::ErrorKind;
+use bson::{deserialize_from_slice, serialize_to_vec};
+use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use crate::keyex;
 
@@ -17,11 +19,26 @@ pub struct ConfigBase {
     pub data: Vec<ConfigRecord>
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PairingRequest {
+    pub master_pubkey_sha256: Vec<u8>,
+    pub name: String,
+    pub expires: i64
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PairedEndpoint {
+    pub master_pubkey_sha256: Vec<u8>,
+    pub name: String
+}
+
 #[derive(Clone)]
 pub struct Config {
     pub master_key: Option<keyex::RsaKeyPair>,
     pub node_key: Option<keyex::NodeKey>,
-    pub listen: Option<String>
+    pub listen: Option<String>,
+    pub pairing_requests: Vec<PairingRequest>,
+    pub paired_endpoints: Vec<PairedEndpoint>
 }
 
 impl ConfigBase {
@@ -91,7 +108,7 @@ impl ConfigBase {
 
 impl Config {
     pub fn new() -> Self {
-        Self { master_key: None, node_key: None, listen: None }
+        Self { master_key: None, node_key: None, listen: None, pairing_requests: Vec::new(), paired_endpoints: Vec::new() }
     }
     pub fn from_file(filename: &str) -> Result<Self,()> {
         let config = match match ConfigBase::from_file(filename) {
@@ -128,7 +145,29 @@ impl Config {
             Some(l) => Some(str::from_utf8(&l.data).unwrap().to_string()),
             None => None
         };
-        Ok(Self { master_key, node_key, listen })
+        let pairing_requests_records = config.get_by_name("pairing_requests");
+        let pairing_requests = pairing_requests_records.iter().map(|r| match deserialize_from_slice::<PairingRequest>(r.data.as_slice()) {
+            Ok(p) => Some(p),
+            Err(_) => {
+                println!("Failed to deserialize pairing request {}, ignoring", r.name);
+                None
+            }
+        }).filter(|r| r.is_some()).map(|r| match r {
+            Some(r) => r,
+            None => PairingRequest { master_pubkey_sha256: Vec::new(), name: "".to_string(), expires: 0 }
+        }).collect::<Vec<PairingRequest>>();
+        let paired_endpoints_records = config.get_by_name("paired_endpoints");
+        let paired_endpoints = paired_endpoints_records.iter().map(|r| match deserialize_from_slice::<PairedEndpoint>(r.data.as_slice()) {
+            Ok(p) => Some(p),
+            Err(_) => {
+                println!("Failed to deserialize paired endpoint {}, ignoring", r.name);
+                None
+            }
+        }).filter(|r| r.is_some()).map(|r| match r {
+            Some(r) => r,
+            None => PairedEndpoint { master_pubkey_sha256: Vec::new(), name: "".to_string() }
+        }).collect::<Vec<PairedEndpoint>>();
+        Ok(Self { master_key, node_key, listen, pairing_requests, paired_endpoints })
     }
     pub fn save(&self, filename: &str) -> Result<(),()> {
         let mut config_base = ConfigBase::new();
@@ -161,6 +200,26 @@ impl Config {
                 data.copy_from_slice(bts);
             }
             config_base.data.push(ConfigRecord { name, data });
+        }
+        for pairing_request in &self.pairing_requests {
+            let pairing_request_data = match serialize_to_vec(pairing_request) {
+                Ok(d) => d,
+                Err(_) => {
+                    println!("Failed to serialize pairing request {}", pairing_request.name);
+                    return Err(())
+                }
+            };
+            config_base.data.push(ConfigRecord { name: "pairing_requests".to_string(), data: pairing_request_data });
+        }
+        for paired_endpoint in &self.paired_endpoints {
+            let pairing_request_data = match serialize_to_vec(paired_endpoint) {
+                Ok(d) => d,
+                Err(_) => {
+                    println!("Failed to serialize pairing request {}", paired_endpoint.name);
+                    return Err(())
+                }
+            };
+            config_base.data.push(ConfigRecord { name: "paired_endpoints".to_string(), data: pairing_request_data });
         }
         config_base.save(filename)
     }

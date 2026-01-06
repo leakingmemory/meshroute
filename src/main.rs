@@ -14,6 +14,8 @@ mod capture;
 mod listen;
 mod handshake;
 mod pair;
+mod encryption;
+mod endpoint;
 
 use std::env;
 use std::process::ExitCode;

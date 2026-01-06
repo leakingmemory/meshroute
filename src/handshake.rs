@@ -1,17 +1,64 @@
-use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::iter::Map;
 use std::net::TcpStream;
-use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
+use rand::RngCore;
 use rsa::pkcs1::DecodeRsaPublicKey;
-use rsa::pkcs1v15::Signature;
-use rsa::RsaPublicKey;
-use rsa::signature::Verifier;
-use crate::config;
+use rsa::oaep::{DecryptingKey, EncryptingKey};
+use rsa::{RsaPrivateKey, RsaPublicKey};
+use rsa::pkcs1v15::{Signature, SigningKey, VerifyingKey};
+use rsa::pkcs8::DecodePrivateKey;
+use rsa::signature::{SignatureEncoding, Signer, Verifier};
+use rsa::traits::{Decryptor, PublicKeyParts, RandomizedEncryptor};
+use sha2::Digest;
+use crate::{config, encryption};
 
 const PROTO_VERSION_MAJOR: u16 = 0;
 const PROTO_VERSION_MINOR: u16 = 0;
+
+pub fn sign(data: &[u8], privkey: RsaPrivateKey) -> Result<Vec<u8>,()> {
+    let signing_key = SigningKey::<sha2::Sha512>::new_unprefixed(privkey);
+    let signature = signing_key.sign(data);
+    let signature = signature.to_vec();
+    Ok(signature)
+}
+
+pub fn verify(data: &[u8], signature: &[u8], pubkey: RsaPublicKey) -> Result<(),()>{
+    let verification_key = VerifyingKey::<sha2::Sha512>::new_unprefixed(pubkey);
+    let signature = match Signature::try_from(signature) {
+        Ok(s) => s,
+        Err(_) => {
+            return Err(());
+        }
+    };
+    match verification_key.verify(data, &signature) {
+        Ok(_) => {
+            Ok(())
+        },
+        Err(_) => {
+            Err(())
+        }
+    }
+}
+
+pub fn encrypt(data: &[u8], pubkey: &[u8]) -> Result<Vec<u8>,()> {
+    let pubkey = match RsaPublicKey::from_pkcs1_der(pubkey) {
+        Ok(k) => k,
+        Err(_) => {
+            println!("Failed to read public key");
+            return Err(());
+        }
+    };
+    let encrypting_key = EncryptingKey::<sha2::Sha256>::new(pubkey);
+    let mut rng = rand::thread_rng();
+    let encrypted = match encrypting_key.encrypt_with_rng(&mut rng, data) {
+        Ok(e) => e,
+        Err(_) => {
+            println!("Failed to encrypt data");
+            return Err(());
+        }
+    };
+    Ok(encrypted)
+}
 
 pub fn send_pubkeys(connection: &mut TcpStream, config: &Arc<Mutex<config::Config>>, version_major: u16, version_minor: u16) -> Result<(),()> {
     let master_pubkey;
@@ -175,7 +222,7 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys,()> {
         };
         let verifying_key = rsa::pkcs1v15::VerifyingKey::<sha2::Sha512>::new_unprefixed(master_public_key);
         match verifying_key.verify(node_pubkey.as_slice(), &signature) {
-            Ok(()) => println!("Node key is valid"),
+            Ok(()) => {},
             Err(e) => {
                 println!("Signature verification failed: {:?}", e);
                 return Err(())
@@ -186,12 +233,209 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys,()> {
     Ok(RecvProtoAndKeys {master_pubkey, node_pubkey, version_major, version_minor})
 }
 
+fn generate_key_and_nonce(input: &[u8]) -> Result<encryption::KeyAndNonce,()> {
+    let hsv = sha2::Sha512::digest(input);
+    let hs = hsv.as_slice();
+    let mut counter_bytes = [0u8; 16];
+    counter_bytes.copy_from_slice(&hs[48..64]);
+    let mut key = [0u8; 32];
+    let mut nonce_prefix = [0u8; 16];
+    let counter = u128::from_be_bytes(counter_bytes);
+    key.copy_from_slice(&hs[0..32]);
+    nonce_prefix.copy_from_slice(&hs[32..48]);
+    encryption::KeyAndNonce::new(key, nonce_prefix, counter)
+}
+
+fn send_init(connection: &mut TcpStream, recv_pkeys: &RecvProtoAndKeys, config: &Arc<Mutex<config::Config>>) -> Result<encryption::KeyAndNonce,()> {
+    let pubkey = match RsaPublicKey::from_pkcs1_der(recv_pkeys.node_pubkey.as_slice()) {
+        Ok(k) => k,
+        Err(_) => {
+            println!("Failed to read public key");
+            return Err(());
+        }
+    };
+    let mut keys;
+    let mut init_block_signature;
+    {
+        let mut init_block;
+        {
+            let block_of_material_size = pubkey.size() - 66;
+            let mut block_of_material: Vec<u8> = Vec::new();
+            block_of_material.resize(block_of_material_size, 0);
+            let mut rng = rand::thread_rng();
+            rng.fill_bytes(block_of_material.as_mut_slice());
+            keys = match generate_key_and_nonce(block_of_material.as_slice()) {
+                Ok(k) => k,
+                Err(_) => {
+                    println!("Failed to generate key and nonce");
+                    return Err(());
+                }
+            };
+            {
+                let node_key = match config.lock().unwrap().node_key {
+                    Some(ref node_key) => match RsaPrivateKey::from_pkcs8_der(node_key.key.private_key.as_slice()) {
+                        Ok(k) => k,
+                        Err(_) => {
+                            println!("Failed to read private key");
+                            return Err(());
+                        }
+                    },
+                    None => {
+                        println!("Cannot handle connections without a node key");
+                        return Err(());
+                    }
+                };
+                init_block_signature = match sign(block_of_material.as_slice(), node_key) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        println!("Failed to sign block of material");
+                        return Err(());
+                    }
+                };
+            }
+            init_block = match encrypt(block_of_material.as_slice(), recv_pkeys.node_pubkey.as_slice()) {
+                Ok(e) => e,
+                Err(_) => {
+                    println!("Failed to encrypt block of material");
+                    return Err(());
+                }
+            };
+        }
+        let len = init_block.len();
+        init_block.resize(len + 16, 0);
+        for i in 0..len {
+            init_block[len - i + 15] = init_block[len - i - 1];
+        }
+        match keys.encrypt(&mut init_block_signature) {
+            Ok(_) => {},
+            Err(_) => {
+                println!("Failed to encrypt init block signature");
+                return Err(());
+            }
+        }
+        init_block[0..8].copy_from_slice(&len.to_be_bytes());
+        init_block[8..16].copy_from_slice(&init_block_signature.len().to_be_bytes());
+        match connection.write(init_block.as_slice()) {
+            Ok(s) => if s != init_block.len() {
+                println!("External connection write error, closing");
+                return Err(())
+            },
+            Err(_) => {
+                println!("External connection write error, closing");
+                return Err(())
+            },
+        }
+    }
+    match connection.write(init_block_signature.as_slice()) {
+        Ok(s) => if s != init_block_signature.len() {
+            println!("External connection write error, closing");
+            return Err(())
+        },
+        Err(_) => {
+            println!("External connection write error, closing");
+            return Err(())
+        },
+    }
+    Ok(keys)
+}
+
+fn recv_init(connection: &mut TcpStream, recv_pkeys: &RecvProtoAndKeys, config: &Arc<Mutex<config::Config>>) -> Result<encryption::KeyAndNonce,()> {
+    let mut block_of_material_buf: Vec<u8> = Vec::new();
+    let block_of_material_len;
+    {
+        block_of_material_buf.resize(16, 0);
+        match connection.read(block_of_material_buf.as_mut_slice()) {
+            Ok(s) => if s != 16 {
+                println!("External connection read error, closing");
+                return Err(())
+            },
+            Err(_) => {
+                println!("External connection read error, closing");
+                return Err(())
+            },
+        }
+        let mut u64buf = [0u8; 8];
+        u64buf.copy_from_slice(&block_of_material_buf[0..8]);
+        block_of_material_len = u64::from_be_bytes(u64buf) as usize;
+        u64buf.copy_from_slice(&block_of_material_buf[8..16]);
+        let block_of_material_siglen = u64::from_be_bytes(u64buf) as usize;
+        block_of_material_buf.resize(block_of_material_len + block_of_material_siglen, 0);
+        match connection.read_exact(block_of_material_buf.as_mut_slice()) {
+            Ok(s) => {},
+            Err(_) => {
+                println!("External connection read error, closing");
+                return Err(())
+            },
+        }
+    }
+    let decryption_key = match config.lock().unwrap().node_key {
+        Some(ref node_key) => match RsaPrivateKey::from_pkcs8_der(node_key.key.private_key.as_slice()) {
+            Ok(k) => k,
+            Err(_) => {
+                println!("Failed to read private key");
+                return Err(());
+            }
+        },
+        None => {
+            println!("Cannot handle connections without a node key");
+            return Err(())
+        }
+    };
+    let decryption_key = DecryptingKey::<sha2::Sha256>::new(decryption_key);
+    let block_of_material = match decryption_key.decrypt(&block_of_material_buf[0..block_of_material_len]) {
+        Ok(b) => b,
+        Err(_) => {
+            println!("Failed to decrypt block of material");
+            return Err(());
+        }
+    };
+    let mut keys = match generate_key_and_nonce(block_of_material.as_slice()) {
+        Ok(k) => k,
+        Err(_) => {
+            println!("Failed to generate key and nonce");
+            return Err(());
+        }
+    };
+    let mut signature: Vec<u8> = Vec::new();
+    signature.resize(block_of_material_buf.len() - block_of_material_len, 0);
+    signature.as_mut_slice().copy_from_slice(&block_of_material_buf[block_of_material_len..]);
+    match keys.decrypt(&mut signature) {
+        Ok(_) => {},
+        Err(_) => {
+            println!("Failed to decrypt signature");
+            return Err(());
+        }
+    };
+    let verification_key = match RsaPublicKey::from_pkcs1_der(recv_pkeys.node_pubkey.as_slice()) {
+        Ok(k) => k,
+        Err(_) => {
+            println!("Failed to read public key");
+            return Err(());
+        }
+    };
+    match verify(block_of_material.as_slice(), signature.as_slice(), verification_key) {
+        Ok(_) => {},
+        Err(_) => {
+            println!("Signature verification failed");
+            return Err(())
+        }
+    }
+    Ok(keys)
+}
+
+#[derive(Clone)]
+pub struct EndpointSecurity {
+    pub master_pubkey_sha256: Vec<u8>,
+    pub encryption_out: encryption::KeyAndNonce,
+    pub encryption_in: encryption::KeyAndNonce
+}
+
 const SERVER_VERSION_MIN: u16 = 0;
 const SERVER_VERSION_MAX: u16 = 0;
 const SERVER_MINOR_VERSION_MIN: [(u16, u16); 1] = [(0u16, 0u16)];
 const SERVER_MINOR_VERSION_MAX: [(u16, u16); 1] = [(0u16, 0u16)];
 
-pub fn run_server_handshake(connection: &mut TcpStream, config: &Arc<Mutex<config::Config>>) -> Result<RecvProtoAndKeys,()> {
+pub fn run_server_handshake(connection: &mut TcpStream, config: &Arc<Mutex<config::Config>>) -> Result<EndpointSecurity,()> {
     match send_pubkeys(connection, config, PROTO_VERSION_MAJOR, PROTO_VERSION_MINOR) {
         Ok(_) => {},
         Err(_) => return Err(())
@@ -220,14 +464,25 @@ pub fn run_server_handshake(connection: &mut TcpStream, config: &Arc<Mutex<confi
             }
         }
     }
-    Ok(recv_pkeys)
+    let encryption_out = match send_init(connection, &recv_pkeys, config) {
+        Ok(keys) => keys,
+        Err(_) => return Err(())
+    };
+    let encryption_in = match recv_init(connection, &recv_pkeys, config) {
+        Ok(keys) => keys,
+        Err(_) => return Err(())
+    };
+    let master_pubkey_sha256 = sha2::Sha256::digest(recv_pkeys.master_pubkey.as_slice()).as_slice().to_vec();
+    Ok(EndpointSecurity {
+        master_pubkey_sha256, encryption_out, encryption_in
+    })
 }
 
 const CLIENT_VERSION_MIN: u16 = 0;
 const CLIENT_VERSION_MAX: u16 = 0;
 const CLIENT_MINOR_VERSION_MIN: [(u16, u16); 1] = [(0u16, 0u16)];
 const CLIENT_MINOR_VERSION_MAX: [(u16, u16); 1] = [(0u16, 0u16)];
-pub fn run_client_handshake(connection: &mut TcpStream, config: &Arc<Mutex<config::Config>>) -> Result<RecvProtoAndKeys,()> {
+pub fn run_client_handshake(connection: &mut TcpStream, config: &Arc<Mutex<config::Config>>) -> Result<EndpointSecurity,()> {
     let mut recv_pkeys = match recv_pubkeys(connection) {
         Ok(r) => r,
         Err(_) => return Err(())
@@ -256,5 +511,16 @@ pub fn run_client_handshake(connection: &mut TcpStream, config: &Arc<Mutex<confi
         Ok(_) => {},
         Err(_) => return Err(())
     }
-    Ok(recv_pkeys)
+    let encryption_out = match send_init(connection, &recv_pkeys, config) {
+        Ok(keys) => keys,
+        Err(_) => return Err(())
+    };
+    let encryption_in = match recv_init(connection, &recv_pkeys, config) {
+        Ok(keys) => keys,
+        Err(_) => return Err(())
+    };
+    let master_pubkey_sha256 = sha2::Sha256::digest(recv_pkeys.master_pubkey.as_slice()).as_slice().to_vec();
+    Ok(EndpointSecurity {
+        master_pubkey_sha256, encryption_out, encryption_in
+    })
 }

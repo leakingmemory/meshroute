@@ -6,16 +6,21 @@ use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
+use std::time::Duration;
 use bson::{deserialize_from_slice, serialize_to_vec};
+use libc::sleep;
 use rsa::signature::{SignatureEncoding, Signer, Verifier};
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use rsa::pkcs1::{DecodeRsaPublicKey, EncodeRsaPublicKey};
 use rsa::pkcs1v15::Signature;
 use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey};
 use serde::de::DeserializeOwned;
-use crate::{config, controlproto, ethernet, ethertable, eventproto, filedes, handshake, keyex, opts};
+use serde::Serialize;
+use crate::{config, controlproto, endpoint, ethernet, ethertable, eventproto, filedes, handshake, keyex, opts};
+use crate::config::PairingRequest;
 use crate::controlproto::Command;
 use crate::controlproto::ControlMsgType::HOST_PACKET;
+use crate::endpoint::EndpointMessage;
 use crate::ethernet::EthernetAddress;
 use crate::ethertable::MacEntryLocation::LOCAL;
 use crate::eventproto::EventType;
@@ -51,6 +56,76 @@ fn read_control_object<T>(stream: &mut UnixStream) -> Result<T,()> where T: Dese
         Ok(obj) => Ok(obj),
         Err(_) => Err(())
     }
+}
+
+fn write_control(stream: &mut UnixStream, msg_type: controlproto::ControlMsgType) -> Result<(),()> {
+    let buf = [0u8; 0];
+    let hdr = controlproto::ControlMsgHdr {
+        len: buf.len() as u32,
+        msg_type
+    };
+    let hdr = hdr.to_bytes();
+    let hdrlen = match stream.write(&hdr) {
+        Ok(len) => len,
+        Err(_) => {
+            println!("Failed to write control message header");
+            return Err(());
+        }
+    };
+    if hdrlen != hdr.len() {
+        println!("Failed to write control message header: short write");
+        return Err(());
+    }
+    let msglen = match stream.write(buf.as_slice()) {
+        Ok(len) => len,
+        Err(_) => {
+            println!("Failed to write control message data");
+            return Err(());
+        }
+    };
+    if msglen != buf.len() {
+        println!("Failed to write control message data: short write");
+        return Err(());
+    }
+    Ok(())
+}
+
+fn write_control_object<T>(stream: &mut UnixStream, msg_type: controlproto::ControlMsgType, obj: &T) -> Result<(),()> where T: Serialize {
+    let buf = match serialize_to_vec(obj) {
+        Ok(v) => v,
+        Err(_) => {
+            println!("Failed to serialize control message object");
+            return Err(())
+        }
+    };
+    let hdr = controlproto::ControlMsgHdr {
+        len: buf.len() as u32,
+        msg_type
+    };
+    let hdr = hdr.to_bytes();
+    let hdrlen = match stream.write(&hdr) {
+        Ok(len) => len,
+        Err(_) => {
+            println!("Failed to write control message header");
+            return Err(());
+        }
+    };
+    if hdrlen != hdr.len() {
+        println!("Failed to write control message header: short write");
+        return Err(());
+    }
+    let msglen = match stream.write(buf.as_slice()) {
+        Ok(len) => len,
+        Err(_) => {
+            println!("Failed to write control message data");
+            return Err(());
+        }
+    };
+    if msglen != buf.len() {
+        println!("Failed to write control message data: short write");
+        return Err(());
+    }
+    Ok(())
 }
 
 fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, event_handler: Arc<Mutex<EventHandlerCtx>>, config: Arc<Mutex<config::Config>>, ctx: &WorkerContextThreadSafe) {
@@ -139,17 +214,101 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                     Ok(c) => c,
                     Err(_) => {
                         println!("Failed to connect to {} for pairing.", pair_ctrl.addr);
+                        match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_ERROR) {
+                            Ok(_) => {},
+                            Err(_) => {
+                                println!("Failed to write control response");
+                                return;
+                            }
+                        };
                         return;
                     }
                 };
-                match handshake::run_client_handshake(&mut connection, &config) {
-                    Ok(_) => {},
+                let endpoint_security = match handshake::run_client_handshake(&mut connection, &config) {
+                    Ok(sec) => sec,
                     Err(_) => {
                         println!("Failed to shake hands with {} for pairing.", pair_ctrl.addr);
+                        match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_ERROR) {
+                            Ok(_) => {},
+                            Err(_) => {
+                                println!("Failed to write control response");
+                                return;
+                            }
+                        };
+                        return;
+                    }
+                };
+                let mut endpoint = endpoint::Endpoint::new(connection, endpoint_security);
+                let pairing_request = endpoint::PairingRequest {
+                    name: name.to_string()
+                };
+                let pairing_request = match serialize_to_vec(&pairing_request) {
+                    Ok(p) => p,
+                    Err(_) => {
+                        println!("Failed to serialize pairing request");
+                        return;
+                    }
+                };
+                match endpoint.send(EndpointMessage::PAIRING_REQUEST, pairing_request.as_slice()) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        println!("Failed to send pairing request to {}", pair_ctrl.addr);
+                        match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_ERROR) {
+                            Ok(_) => {},
+                            Err(_) => {
+                                println!("Failed to write control response");
+                                return;
+                            }
+                        };
                         return;
                     }
                 }
-                println!("Handshake ok with {}", pair_ctrl.addr);
+                let mut response_buf: Vec<u8> = Vec::new();
+                let response = match endpoint.recv(&mut response_buf) {
+                    Ok(r) => r,
+                    Err(_) => {
+                        println!("Failed to receive pairing response from {}", pair_ctrl.addr);
+                        match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_ERROR) {
+                            Ok(_) => {},
+                            Err(_) => {
+                                println!("Failed to write control response");
+                                return;
+                            }
+                        };
+                        return;
+                    }
+                };
+                match response {
+                    EndpointMessage::PAIRING_RESPONSE => {
+                        let mut master_pubkey_sha256 = [0u8; 32];
+                        for i in 0..32 {
+                            master_pubkey_sha256[i] = endpoint.endpoint_security.master_pubkey_sha256[i];
+                        }
+                        let pair_result = controlproto::PairResult {
+                            master_pubkey_sha256,
+                            name: name.to_string()
+                        };
+                        match write_control_object(&mut stream, controlproto::ControlMsgType::PAIRING_RESPONSE, &pair_result) {
+                            Ok(_) => {},
+                            Err(_) => {
+                                println!("Failed to write control response");
+                                return;
+                            }
+                        };
+                        return;
+                    },
+                    _ => {
+                        println!("Unexpected pairing response from {}", pair_ctrl.addr);
+                        match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_ERROR) {
+                            Ok(_) => {},
+                            Err(_) => {
+                                println!("Failed to write control response");
+                                return;
+                            }
+                        };
+                        return;
+                    }
+                }
             },
             _ => {
                 println!("Unknown command: {}", cmd);
@@ -332,16 +491,20 @@ pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCt
 
 struct WorkerContext {
     pub config: Arc<Mutex<config::Config>>,
+    pub config_filename: String,
     pub event_writer: PipeWriter,
-    pub tap_dev: filedes::FileDes
+    pub tap_dev: filedes::FileDes,
+    pub restart_me_writer: PipeWriter
 }
 
 impl Clone for WorkerContext {
     fn clone(&self) -> Self {
         Self {
             config: self.config.clone(),
+            config_filename: self.config_filename.clone(),
             event_writer: self.event_writer.try_clone().unwrap(),
-            tap_dev: self.tap_dev.clone()
+            tap_dev: self.tap_dev.clone(),
+            restart_me_writer: self.restart_me_writer.try_clone().unwrap()
         }
     }
 }
@@ -372,7 +535,10 @@ impl WorkerContext {
             };
             if let Some(listen_socket) = listen_socket {
                 let config = self.config.clone();
+                let config_filename = self.config_filename.clone();
+                let restart_me_writer = self.restart_me_writer.try_clone().unwrap();
                 let network_listener = thread::spawn(move || {
+                    let mut client_threads: Vec<thread::JoinHandle<()>> = Vec::new();
                     for connection in listen_socket.incoming() {
                         let mut connection = match connection {
                             Ok(c) => c,
@@ -381,10 +547,83 @@ impl WorkerContext {
                                 break;
                             }
                         };
-                        match handshake::run_server_handshake(&mut connection, &config) {
-                            Ok(_) => {},
-                            Err(_) => continue
-                        }
+                        let config = config.clone();
+                        client_threads.retain(move |thread| {
+                            !thread.is_finished()
+                        });
+                        let config_filename = config_filename.clone();
+                        let mut restart_me_writer = restart_me_writer.try_clone().unwrap();
+                        let network_handler = thread::spawn(move || {
+                            let endpoint_security = match handshake::run_server_handshake(&mut connection, &config) {
+                                Ok(sec) => sec,
+                                Err(_) => return
+                            };
+                            let mut endpoint = endpoint::Endpoint::new(connection, endpoint_security);
+                            // TODO - should at least have timeouts to avoid denial of service
+                            let mut req_vec: Vec<u8> = Vec::new();
+                            let req_type = match endpoint.recv(&mut req_vec) {
+                                Ok(req_type) => req_type,
+                                Err(_) => return
+                            };
+                            {
+                                let config = config.lock().unwrap();
+                                for paired in &config.paired_endpoints {
+                                    let mut matching = paired.master_pubkey_sha256.len() == endpoint.endpoint_security.master_pubkey_sha256.len();
+                                    if matching {
+                                        for i in 0..endpoint.endpoint_security.master_pubkey_sha256.len() {
+                                            if endpoint.endpoint_security.master_pubkey_sha256[i] != paired.master_pubkey_sha256[i] {
+                                                matching = false;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if matching {
+                                        endpoint.name = Some(paired.name.clone());
+                                    }
+                                }
+                            }
+                            if matches!(req_type, EndpointMessage::PAIRING_REQUEST) {
+                                let pairing_request = match deserialize_from_slice::<endpoint::PairingRequest>(&req_vec) {
+                                    Ok(r) => r,
+                                    Err(_) => {
+                                        println!("Failed to deserialize pairing request");
+                                        return;
+                                    }
+                                };
+                                {
+                                    let mut config = config.lock().unwrap();
+                                    config.pairing_requests.push(PairingRequest {
+                                        name: pairing_request.name,
+                                        master_pubkey_sha256: endpoint.endpoint_security.master_pubkey_sha256.clone(),
+                                        expires: chrono::Utc::now().timestamp() + (5*24*60*60)
+                                    });
+                                    match config.save(config_filename.as_str()) {
+                                        Ok(_) => {},
+                                        Err(_) => {
+                                            println!("Failed to save config with pairing request");
+                                            return;
+                                        }
+                                    };
+                                }
+                                match endpoint.send(EndpointMessage::PAIRING_RESPONSE, &[0u8; 0]) {
+                                    Ok(_) => {},
+                                    Err(_) => {
+                                        println!("Failed to send pairing response");
+                                        return;
+                                    }
+                                }
+                                println!("Stopping network worker process and equesting restart");
+                                let buf = [1u8];
+                                match restart_me_writer.write(&buf) {
+                                    Ok(_) => {},
+                                    Err(_) => {
+                                        println!("Failed to write to restart pipe");
+                                    }
+                                }
+                                std::process::exit(0);
+                            }
+                        });
+                        client_threads.push(network_handler);
                     }
                 });
             }
@@ -507,6 +746,7 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
             }
             unsafe { libc::kill(pid, libc::SIGTERM); }
             unsafe { libc::waitpid(pid, std::ptr::null_mut(), 0); }
+            thread::sleep(Duration::from_secs(1));
         }
     }
 }
@@ -741,7 +981,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
                 }
             };
             let forkedworker: Option<ForkedWorker> = None;
-            ctx = WorkerContextThreadSafe { restart_me_writer: Arc::new(Mutex::new(restart_me_writer.try_clone().unwrap())), forkedworker: Arc::new(Mutex::new(forkedworker)), ctx: Arc::new(Mutex::new(WorkerContext {config: config.clone(), event_writer, tap_dev})) };
+            ctx = WorkerContextThreadSafe { restart_me_writer: Arc::new(Mutex::new(restart_me_writer.try_clone().unwrap())), forkedworker: Arc::new(Mutex::new(forkedworker)), ctx: Arc::new(Mutex::new(WorkerContext {config: config.clone(), config_filename: config_file_name.clone(), event_writer, tap_dev, restart_me_writer: restart_me_writer.try_clone().unwrap()})) };
             ctx.run_worker_process();
         }
         let eventworker_ctx = eventworker_ctx.clone();

@@ -93,27 +93,19 @@ impl ControlClient {
     pub(crate) fn receive<F,T>(&mut self, func: F) -> Result<T,()>
     where F: FnOnce(&ControlMsgHdr, &[u8]) -> Result<T,()> {
         let mut hdrbuf = [0u8; 8];
-        let mut off = 0;
-        while off < hdrbuf.len() {
-            let rd = match self.stream.read(&mut hdrbuf[off..]) {
-                Ok(r) => r,
-                Err(_) => return Err(())
-            };
-            off += rd;
-        }
+        match self.stream.read_exact(&mut hdrbuf) {
+            Ok(_) => {},
+            Err(_) => return Err(())
+        };
         let hdr = match ControlMsgHdr::from_bytes(&hdrbuf) {
             Ok(h) => h,
             Err(_) => return Err(())
         };
         self.buffer.resize(hdr.len as usize, 0u8);
-        off = 0;
-        while off < self.buffer.len() {
-            let rd = match self.stream.read(&mut self.buffer[off..]) {
-                Ok(r) => r,
-                Err(_) => return Err(())
-            };
-            off += rd;
-        }
+        match self.stream.read_exact(self.buffer.as_mut_slice()) {
+            Ok(_) => {},
+            Err(_) => return Err(())
+        };
         func(&hdr, &self.buffer)
     }
 }
