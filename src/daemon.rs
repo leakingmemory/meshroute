@@ -125,7 +125,13 @@ fn write_control_object<T>(stream: &mut UnixStream, msg_type: controlproto::Cont
         println!("Failed to write control message data: short write");
         return Err(());
     }
-    Ok(())
+    match stream.flush() {
+        Ok(_) => Ok(()),
+        Err(_) => {
+            println!("Failed to write control message data: flush failed");
+            return Err(());
+        }
+    }
 }
 
 fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, event_handler: Arc<Mutex<EventHandlerCtx>>, config: Arc<Mutex<config::Config>>, ctx: &WorkerContextThreadSafe) {
@@ -158,10 +164,10 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
     }
     loop {
         let mut cmdbuf = [0u8; 4];
-        match stream.read(&mut cmdbuf) {
+        match stream.read_exact(&mut cmdbuf) {
             Ok(_) => {},
             Err(_) => {
-                println!("Failed to read length for control protocol");
+                println!("Failed to read cmd for control protocol");
                 return;
             }
         }
@@ -170,6 +176,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
         const CAPTURE: u32 = Command::CAPTURE as u32;
         const LISTEN: u32 = Command::LISTEN as u32;
         const PAIR: u32 = Command::PAIR as u32;
+        const LIST_PAIRING_REQUESTS: u32 = Command::LIST_PAIRING_REQUESTS as u32;
         match cmd {
             EXIT => return,
             CAPTURE => {
@@ -309,6 +316,33 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                         return;
                     }
                 }
+            },
+            LIST_PAIRING_REQUESTS => {
+                let mut pairing_requests: Vec<controlproto::PairingRequestListItem> = Vec::new();
+                {
+                    let config = config.lock().unwrap();
+                    for pairing_request in &config.pairing_requests {
+                        let mut master_pubkey_sha256 = [0u8; 32];
+                        for i in 0..32 {
+                            master_pubkey_sha256[i] = pairing_request.master_pubkey_sha256[i];
+                        }
+                        pairing_requests.push(controlproto::PairingRequestListItem {
+                            master_pubkey_sha256,
+                            name: pairing_request.name.clone(),
+                            expires: pairing_request.expires
+                        });
+                    }
+                }
+                let pairing_requests = controlproto::PairingRequestList {
+                    requests: pairing_requests
+                };
+                match write_control_object(&mut stream, controlproto::ControlMsgType::PAIRING_REQUEST_LIST, &pairing_requests) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        println!("Failed to write control response");
+                        return;
+                    }
+                };
             },
             _ => {
                 println!("Unknown command: {}", cmd);

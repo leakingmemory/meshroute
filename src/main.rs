@@ -67,6 +67,13 @@ fn main() -> ExitCode {
                 print_usage(&program, opts);
                 return ExitCode::from(1);
             }
+        } else if matches.free[0] == "list-pairing-requests" {
+            if matches.free.len() == 2 {
+                return pair::run_list_pairing_requests(&meshopts, &matches.free[1]);
+            } else {
+                print_usage(&program, opts);
+                return ExitCode::from(1);
+            }
         } else {
             print_usage(&program, opts);
             return ExitCode::from(1);

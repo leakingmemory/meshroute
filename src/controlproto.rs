@@ -23,12 +23,25 @@ pub struct PairResult {
     pub name: String
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct PairingRequestListItem {
+    pub master_pubkey_sha256: [u8; 32],
+    pub name: String,
+    pub expires: i64
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PairingRequestList {
+    pub requests: Vec<PairingRequestListItem>
+}
+
 #[repr(u32)]
 pub enum Command {
     EXIT = 0,
     CAPTURE = 1,
     LISTEN = 2,
     PAIR = 3,
+    LIST_PAIRING_REQUESTS = 4
 }
 
 #[repr(u32)]
@@ -36,7 +49,8 @@ pub enum Command {
 pub enum ControlMsgType {
     HOST_PACKET = 0,
     PAIRING_RESPONSE = 1,
-    GENERIC_ERROR = 2
+    GENERIC_ERROR = 2,
+    PAIRING_REQUEST_LIST = 3
 }
 
 pub struct ControlMsgHdr {
@@ -62,10 +76,12 @@ impl ControlMsgHdr {
         const HOST_PACKET: u32 = ControlMsgType::HOST_PACKET as u32;
         const PAIRING_RESPONSE: u32 = ControlMsgType::PAIRING_RESPONSE as u32;
         const GENERIC_ERROR: u32 = ControlMsgType::GENERIC_ERROR as u32;
+        const PAIRING_REQUEST_LIST: u32 = ControlMsgType::PAIRING_REQUEST_LIST as u32;
         let msg_type = match msg_type {
             HOST_PACKET => ControlMsgType::HOST_PACKET,
             PAIRING_RESPONSE => ControlMsgType::PAIRING_RESPONSE,
             GENERIC_ERROR => ControlMsgType::GENERIC_ERROR,
+            PAIRING_REQUEST_LIST => ControlMsgType::PAIRING_REQUEST_LIST,
             _ => return Err(())
         };
         Ok(Self { len, msg_type })
