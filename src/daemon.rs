@@ -626,6 +626,20 @@ impl WorkerContext {
                                 };
                                 {
                                     let mut config = config.lock().unwrap();
+                                    config.pairing_requests.retain(|pairing_request| {
+                                        if pairing_request.expires < chrono::Utc::now().timestamp() {
+                                            return false;
+                                        }
+                                        if pairing_request.master_pubkey_sha256.len() != endpoint.endpoint_security.master_pubkey_sha256.len() {
+                                            return true;
+                                        }
+                                        for i in 0..endpoint.endpoint_security.master_pubkey_sha256.len() {
+                                            if endpoint.endpoint_security.master_pubkey_sha256[i] != pairing_request.master_pubkey_sha256[i] {
+                                                return true;
+                                            }
+                                        }
+                                        false
+                                    });
                                     config.pairing_requests.push(PairingRequest {
                                         name: pairing_request.name,
                                         master_pubkey_sha256: endpoint.endpoint_security.master_pubkey_sha256.clone(),
