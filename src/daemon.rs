@@ -16,6 +16,7 @@ use rsa::pkcs1v15::Signature;
 use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use sha2::Digest;
 use crate::{config, controlproto, endpoint, ethernet, ethertable, eventproto, filedes, handshake, keyex, opts};
 use crate::config::PairingRequest;
 use crate::controlproto::Command;
@@ -288,8 +289,40 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                 match response {
                     EndpointMessage::PAIRING_RESPONSE => {
                         let mut master_pubkey_sha256 = [0u8; 32];
-                        for i in 0..32 {
-                            master_pubkey_sha256[i] = endpoint.endpoint_security.master_pubkey_sha256[i];
+                        {
+                            let mut config = config.lock().unwrap();
+                            {
+                                let digest = sha2::Sha256::digest(config.master_key.clone().unwrap().public_key.as_slice()).as_slice().to_vec();
+                                for i in 0..digest.len() {
+                                    master_pubkey_sha256[i] = digest[i];
+                                }
+                            }
+                            config.pairing_requests.retain(|pairing_request| {
+                                if pairing_request.expires < chrono::Utc::now().timestamp() {
+                                    return false;
+                                }
+                                if pairing_request.master_pubkey_sha256.len() != endpoint.endpoint_security.master_pubkey_sha256.len() {
+                                    return true;
+                                }
+                                for i in 0..endpoint.endpoint_security.master_pubkey_sha256.len() {
+                                    if endpoint.endpoint_security.master_pubkey_sha256[i] != pairing_request.master_pubkey_sha256[i] {
+                                        return true;
+                                    }
+                                }
+                                false
+                            });
+                            config.pairing_requests.push(PairingRequest {
+                                name: pair_ctrl.addr,
+                                master_pubkey_sha256: endpoint.endpoint_security.master_pubkey_sha256.clone(),
+                                expires: chrono::Utc::now().timestamp() + (5*24*60*60)
+                            });
+                            match config.save(config_file_name) {
+                                Ok(_) => {},
+                                Err(_) => {
+                                    println!("Failed to save config with pairing request");
+                                    return;
+                                }
+                            };
                         }
                         let pair_result = controlproto::PairResult {
                             master_pubkey_sha256,
@@ -302,6 +335,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                                 return;
                             }
                         };
+                        ctx.restart_me();
                         return;
                     },
                     _ => {
