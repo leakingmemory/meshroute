@@ -74,6 +74,13 @@ fn main() -> ExitCode {
                 print_usage(&program, opts);
                 return ExitCode::from(1);
             }
+        } else if matches.free[0] == "accept" {
+            if matches.free.len() == 3 {
+                return pair::run_accept(&meshopts, &matches.free[1], &matches.free[2]);
+            } else {
+                print_usage(&program, opts);
+                return ExitCode::from(1);
+            }
         } else {
             print_usage(&program, opts);
             return ExitCode::from(1);

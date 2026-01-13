@@ -18,9 +18,15 @@ pub struct PairCmd {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct AcceptPairingCmd {
+    pub key_hash: [u8; 32]
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct PairResult {
     pub master_pubkey_sha256: [u8; 32],
-    pub name: String
+    pub name: String,
+    pub remote_name: String
 }
 
 #[derive(Serialize, Deserialize)]
@@ -41,7 +47,8 @@ pub enum Command {
     CAPTURE = 1,
     LISTEN = 2,
     PAIR = 3,
-    LIST_PAIRING_REQUESTS = 4
+    LIST_PAIRING_REQUESTS = 4,
+    ACCEPT_PAIRING = 5
 }
 
 #[repr(u32)]

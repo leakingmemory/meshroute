@@ -18,10 +18,10 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use sha2::Digest;
 use crate::{config, controlproto, endpoint, ethernet, ethertable, eventproto, filedes, handshake, keyex, opts};
-use crate::config::PairingRequest;
-use crate::controlproto::Command;
+use crate::config::{PairedEndpoint, PairingRequest};
+use crate::controlproto::{Command, PairResult};
 use crate::controlproto::ControlMsgType::HOST_PACKET;
-use crate::endpoint::EndpointMessage;
+use crate::endpoint::{EndpointMessage, PairingResponse};
 use crate::ethernet::EthernetAddress;
 use crate::ethertable::MacEntryLocation::LOCAL;
 use crate::eventproto::EventType;
@@ -178,6 +178,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
         const LISTEN: u32 = Command::LISTEN as u32;
         const PAIR: u32 = Command::PAIR as u32;
         const LIST_PAIRING_REQUESTS: u32 = Command::LIST_PAIRING_REQUESTS as u32;
+        const ACCEPT_PAIRING: u32 = Command::ACCEPT_PAIRING as u32;
         match cmd {
             EXIT => return,
             CAPTURE => {
@@ -288,6 +289,13 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                 };
                 match response {
                     EndpointMessage::PAIRING_RESPONSE => {
+                        let pairing_response = match deserialize_from_slice::<PairingResponse>(response_buf.as_slice()) {
+                            Ok(p) => p,
+                            Err(_) => {
+                                println!("Failed to deserialize pairing response");
+                                return;
+                            }
+                        };
                         let mut master_pubkey_sha256 = [0u8; 32];
                         {
                             let mut config = config.lock().unwrap();
@@ -326,7 +334,8 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                         }
                         let pair_result = controlproto::PairResult {
                             master_pubkey_sha256,
-                            name: name.to_string()
+                            name: name.to_string(),
+                            remote_name: pairing_response.name
                         };
                         match write_control_object(&mut stream, controlproto::ControlMsgType::PAIRING_RESPONSE, &pair_result) {
                             Ok(_) => {},
@@ -377,6 +386,73 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                         return;
                     }
                 };
+            },
+            ACCEPT_PAIRING => {
+                let remote_name;
+                let accept_pairing_ctrl = match read_control_object::<controlproto::AcceptPairingCmd>(&mut stream) {
+                    Ok(l) => l,
+                    Err(_) => {
+                        println!("Failed to read pair object");
+                        return;
+                    }
+                };
+                let mut master_pubkey_sha256 = [0u8; 32];
+                {
+                    let mut config = config.lock().unwrap();
+                    {
+                        let digest = sha2::Sha256::digest(config.master_key.clone().unwrap().public_key.as_slice()).as_slice().to_vec();
+                        for i in 0..digest.len() {
+                            master_pubkey_sha256[i] = digest[i];
+                        }
+                    }
+                    let mut accept_pairing: Option<PairingRequest> = None;
+                    config.pairing_requests.retain(|pairing_request| {
+                        if pairing_request.expires < chrono::Utc::now().timestamp() {
+                            return false;
+                        }
+                        if pairing_request.master_pubkey_sha256.len() != accept_pairing_ctrl.key_hash.len() {
+                            return true;
+                        }
+                        for i in 0..accept_pairing_ctrl.key_hash.len() {
+                            if accept_pairing_ctrl.key_hash[i] != pairing_request.master_pubkey_sha256[i] {
+                                return true;
+                            }
+                        }
+                        accept_pairing = Some(pairing_request.clone());
+                        false
+                    });
+                    remote_name = if let Some(accept_pairing) = accept_pairing {
+                        config.paired_endpoints.push(PairedEndpoint {
+                            name: accept_pairing.name.clone(),
+                            master_pubkey_sha256: accept_pairing_ctrl.key_hash.to_vec()
+                        });
+                        match config.save(config_file_name) {
+                            Ok(_) => {},
+                            Err(_) => {
+                                println!("Failed to save config with pairing request");
+                                return;
+                            }
+                        };
+                        Some(accept_pairing.name)
+                    } else {
+                        None
+                    }
+                }
+                if let Some(remote_name) = remote_name {
+                    let pair_result = controlproto::PairResult {
+                        master_pubkey_sha256,
+                        name: name.to_string(),
+                        remote_name
+                    };
+                    match write_control_object(&mut stream, controlproto::ControlMsgType::PAIRING_RESPONSE, &pair_result) {
+                        Ok(_) => {},
+                        Err(_) => {
+                            println!("Failed to write control response");
+                            return;
+                        }
+                    };
+                    ctx.restart_me();
+                }
             },
             _ => {
                 println!("Unknown command: {}", cmd);
@@ -558,6 +634,7 @@ pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCt
 }
 
 struct WorkerContext {
+    pub name: String,
     pub config: Arc<Mutex<config::Config>>,
     pub config_filename: String,
     pub event_writer: PipeWriter,
@@ -568,6 +645,7 @@ struct WorkerContext {
 impl Clone for WorkerContext {
     fn clone(&self) -> Self {
         Self {
+            name: self.name.clone(),
             config: self.config.clone(),
             config_filename: self.config_filename.clone(),
             event_writer: self.event_writer.try_clone().unwrap(),
@@ -603,6 +681,7 @@ impl WorkerContext {
             };
             if let Some(listen_socket) = listen_socket {
                 let config = self.config.clone();
+                let self_name = self.name.clone();
                 let config_filename = self.config_filename.clone();
                 let restart_me_writer = self.restart_me_writer.try_clone().unwrap();
                 let network_listener = thread::spawn(move || {
@@ -619,6 +698,7 @@ impl WorkerContext {
                         client_threads.retain(move |thread| {
                             !thread.is_finished()
                         });
+                        let self_name = self_name.clone();
                         let config_filename = config_filename.clone();
                         let mut restart_me_writer = restart_me_writer.try_clone().unwrap();
                         let network_handler = thread::spawn(move || {
@@ -687,7 +767,17 @@ impl WorkerContext {
                                         }
                                     };
                                 }
-                                match endpoint.send(EndpointMessage::PAIRING_RESPONSE, &[0u8; 0]) {
+                                let pairing_result = endpoint::PairingResponse {
+                                    name: self_name.clone()
+                                };
+                                let pairing_result = match serialize_to_vec(&pairing_result) {
+                                    Ok(p) => p,
+                                    Err(_) => {
+                                        println!("Failed to serialize pairing response");
+                                        return;
+                                    }
+                                };
+                                match endpoint.send(EndpointMessage::PAIRING_RESPONSE, pairing_result.as_slice()) {
                                     Ok(_) => {},
                                     Err(_) => {
                                         println!("Failed to send pairing response");
@@ -1063,7 +1153,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
                 }
             };
             let forkedworker: Option<ForkedWorker> = None;
-            ctx = WorkerContextThreadSafe { restart_me_writer: Arc::new(Mutex::new(restart_me_writer.try_clone().unwrap())), forkedworker: Arc::new(Mutex::new(forkedworker)), ctx: Arc::new(Mutex::new(WorkerContext {config: config.clone(), config_filename: config_file_name.clone(), event_writer, tap_dev, restart_me_writer: restart_me_writer.try_clone().unwrap()})) };
+            ctx = WorkerContextThreadSafe { restart_me_writer: Arc::new(Mutex::new(restart_me_writer.try_clone().unwrap())), forkedworker: Arc::new(Mutex::new(forkedworker)), ctx: Arc::new(Mutex::new(WorkerContext {name: name.to_string(), config: config.clone(), config_filename: config_file_name.clone(), event_writer, tap_dev, restart_me_writer: restart_me_writer.try_clone().unwrap()})) };
             ctx.run_worker_process();
         }
         let eventworker_ctx = eventworker_ctx.clone();
