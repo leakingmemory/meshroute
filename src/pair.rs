@@ -3,7 +3,7 @@ use bson::deserialize_from_slice;
 use crate::control::connect_control;
 use crate::{controlproto, opts};
 use crate::controlproto::ControlMsgType::PAIRING_RESPONSE;
-use crate::controlproto::{ControlMsgType, PairResult, PairingRequestList};
+use crate::controlproto::{ControlMsgType, PairResult, PairedList, PairingRequestList};
 
 pub fn run_pair(opts: &opts::Opts, name: &str, addr: &str) -> ExitCode {
     let mut control = match connect_control(opts, name) {
@@ -102,6 +102,51 @@ pub fn run_list_pairing_requests(opts: &opts::Opts, name: &str) -> ExitCode {
             Some(local_expires) => println!("{} {} {}", short_key_hash(item.master_pubkey_sha256.as_slice()), item.name, local_expires.format("%Y-%m-%d %H:%M:%S %:z")),
             None => println!("{} {} {}", short_key_hash(item.master_pubkey_sha256.as_slice()), item.name, item.expires)
         }
+    }
+    match control.command(controlproto::Command::EXIT) {
+        Ok(()) => {},
+        Err(_) => {
+            println!("Failed to send exit command to control socket");
+            return ExitCode::from(1)
+        }
+    };
+    ExitCode::from(0)
+}
+
+pub fn run_list_paired(opts: &opts::Opts, name: &str) -> ExitCode {
+    let mut control = match connect_control(opts, name) {
+        Ok(c) => c,
+        Err(_) => return ExitCode::from(1)
+    };
+    match control.command(controlproto::Command::LIST_PAIRED_ENDPOINTS) {
+        Ok(()) => {},
+        Err(_) => {
+            println!("Failed to send request for the pairing request list to control socket");
+            return ExitCode::from(1)
+        }
+    };
+    let result = match control.receive(|hdr, buf| {
+        if matches!(hdr.msg_type, ControlMsgType::PAIRED_LIST) {
+            Ok(match deserialize_from_slice::<PairedList>(buf) {
+                Ok(r) => r,
+                Err(_) => {
+                    println!("Failed to deserialize pairing request list");
+                    return Err(());
+                }
+            })
+        } else {
+            println!("Pairing request list request failed");
+            Err(())
+        }
+    }) {
+        Ok(opt) => opt,
+        Err(_) => {
+            println!("Failed to receive the pairing request list from control socket");
+            return ExitCode::from(1)
+        }
+    };
+    for item in result.endpoints {
+        println!("{:x?} {}", item.master_pubkey_sha256.as_slice(), item.name);
     }
     match control.command(controlproto::Command::EXIT) {
         Ok(()) => {},
@@ -264,5 +309,46 @@ pub fn run_accept(opts: &opts::Opts, name: &str, key_hash: &str) -> ExitCode {
         }
     };
     println!("Run on the other end: meshroute finish \"{}\" \"{:x?}\"", result.remote_name, result.master_pubkey_sha256.as_slice());
+    ExitCode::from(0)
+}
+
+pub fn run_finish(opts: &opts::Opts, name: &str, key_hash: &str) -> ExitCode {
+    let key_hash = match parse_key_hash(key_hash) {
+        Ok(k) => k,
+        Err(_) => return ExitCode::from(1)
+    };
+    let mut control = match connect_control(opts, name) {
+        Ok(c) => c,
+        Err(_) => return ExitCode::from(1)
+    };
+    let pair_cmd = controlproto::AcceptPairingCmd { key_hash };
+    match control.command_with_object(controlproto::Command::ACCEPT_PAIRING, &pair_cmd) {
+        Ok(()) => {},
+        Err(_) => {
+            println!("Failed to send pairing request command to control socket");
+            return ExitCode::from(1)
+        }
+    };
+    let result = match control.receive(|hdr, buf| {
+        if matches!(hdr.msg_type, PAIRING_RESPONSE) {
+            Ok(match deserialize_from_slice::<PairResult>(buf) {
+                Ok(r) => r,
+                Err(_) => {
+                    println!("Failed to deserialize pairing response");
+                    return Err(());
+                }
+            })
+        } else {
+            println!("Pairing failed");
+            Err(())
+        }
+    }) {
+        Ok(opt) => opt,
+        Err(_) => {
+            println!("Failed to receive pairing response from control socket");
+            return ExitCode::from(1)
+        }
+    };
+    println!("Finished pairing with {}", result.remote_name);
     ExitCode::from(0)
 }

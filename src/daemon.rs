@@ -179,6 +179,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
         const PAIR: u32 = Command::PAIR as u32;
         const LIST_PAIRING_REQUESTS: u32 = Command::LIST_PAIRING_REQUESTS as u32;
         const ACCEPT_PAIRING: u32 = Command::ACCEPT_PAIRING as u32;
+        const LIST_PAIRED_ENDPOINTS: u32 = Command::LIST_PAIRED_ENDPOINTS as u32;
         match cmd {
             EXIT => return,
             CAPTURE => {
@@ -380,6 +381,28 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                     requests: pairing_requests
                 };
                 match write_control_object(&mut stream, controlproto::ControlMsgType::PAIRING_REQUEST_LIST, &pairing_requests) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        println!("Failed to write control response");
+                        return;
+                    }
+                };
+            },
+            LIST_PAIRED_ENDPOINTS => {
+                let mut paired_endpoints: Vec<config::PairedEndpoint> = Vec::new();
+                {
+                    let config = config.lock().unwrap();
+                    for paired_endpoint in &config.paired_endpoints {
+                        paired_endpoints.push(config::PairedEndpoint {
+                            master_pubkey_sha256: paired_endpoint.master_pubkey_sha256.clone(),
+                            name: paired_endpoint.name.clone()
+                        });
+                    }
+                }
+                let paired_endpoints = controlproto::PairedList {
+                    endpoints: paired_endpoints
+                };
+                match write_control_object(&mut stream, controlproto::ControlMsgType::PAIRED_LIST, &paired_endpoints) {
                     Ok(_) => {},
                     Err(_) => {
                         println!("Failed to write control response");

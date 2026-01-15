@@ -74,9 +74,23 @@ fn main() -> ExitCode {
                 print_usage(&program, opts);
                 return ExitCode::from(1);
             }
+        } else if matches.free[0] == "list-paired" {
+            if matches.free.len() == 2 {
+                return pair::run_list_paired(&meshopts, &matches.free[1]);
+            } else {
+                print_usage(&program, opts);
+                return ExitCode::from(1);
+            }
         } else if matches.free[0] == "accept" {
             if matches.free.len() == 3 {
                 return pair::run_accept(&meshopts, &matches.free[1], &matches.free[2]);
+            } else {
+                print_usage(&program, opts);
+                return ExitCode::from(1);
+            }
+        } else if matches.free[0] == "finish" {
+            if matches.free.len() == 3 {
+                return pair::run_finish(&meshopts, &matches.free[1], &matches.free[2]);
             } else {
                 print_usage(&program, opts);
                 return ExitCode::from(1);
@@ -98,5 +112,15 @@ fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage:\n {} [options] listen <name> <addr:port>\n", program);
     print!("{}", opts.usage(&brief));
     let brief = format!("Usage:\n {} [options] pair <name> <addr:port>\n", program);
+    print!("{}", opts.usage(&brief));
+    let brief = format!("Usage:\n {} [options] list-pairing-requests <name>\n", program);
+    print!("{}", opts.usage(&brief));
+    let brief = format!("Usage:\n {} [options] list-paired <name>\n", program);
+    print!("{}", opts.usage(&brief));
+    let brief = format!("Usage:\n {} [options] pair <name> <addr:port>\n", program);
+    print!("{}", opts.usage(&brief));
+    let brief = format!("Usage:\n {} [options] accept <name> <master-key>\n", program);
+    print!("{}", opts.usage(&brief));
+    let brief = format!("Usage:\n {} [options] finish <name> <master-key>\n", program);
     print!("{}", opts.usage(&brief));
 }

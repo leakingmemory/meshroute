@@ -1,4 +1,5 @@
 use serde::{Serialize, Deserialize};
+use crate::config;
 
 #[derive(Serialize, Deserialize)]
 pub struct Greeting {
@@ -41,6 +42,11 @@ pub struct PairingRequestList {
     pub requests: Vec<PairingRequestListItem>
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct PairedList {
+    pub endpoints: Vec<config::PairedEndpoint>
+}
+
 #[repr(u32)]
 pub enum Command {
     EXIT = 0,
@@ -48,7 +54,8 @@ pub enum Command {
     LISTEN = 2,
     PAIR = 3,
     LIST_PAIRING_REQUESTS = 4,
-    ACCEPT_PAIRING = 5
+    ACCEPT_PAIRING = 5,
+    LIST_PAIRED_ENDPOINTS = 6
 }
 
 #[repr(u32)]
@@ -57,7 +64,8 @@ pub enum ControlMsgType {
     HOST_PACKET = 0,
     PAIRING_RESPONSE = 1,
     GENERIC_ERROR = 2,
-    PAIRING_REQUEST_LIST = 3
+    PAIRING_REQUEST_LIST = 3,
+    PAIRED_LIST = 4
 }
 
 pub struct ControlMsgHdr {
@@ -84,11 +92,13 @@ impl ControlMsgHdr {
         const PAIRING_RESPONSE: u32 = ControlMsgType::PAIRING_RESPONSE as u32;
         const GENERIC_ERROR: u32 = ControlMsgType::GENERIC_ERROR as u32;
         const PAIRING_REQUEST_LIST: u32 = ControlMsgType::PAIRING_REQUEST_LIST as u32;
+        const PAIRED_LIST: u32 = ControlMsgType::PAIRED_LIST as u32;
         let msg_type = match msg_type {
             HOST_PACKET => ControlMsgType::HOST_PACKET,
             PAIRING_RESPONSE => ControlMsgType::PAIRING_RESPONSE,
             GENERIC_ERROR => ControlMsgType::GENERIC_ERROR,
             PAIRING_REQUEST_LIST => ControlMsgType::PAIRING_REQUEST_LIST,
+            PAIRED_LIST => ControlMsgType::PAIRED_LIST,
             _ => return Err(())
         };
         Ok(Self { len, msg_type })
