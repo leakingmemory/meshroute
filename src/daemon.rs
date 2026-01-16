@@ -180,6 +180,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
         const LIST_PAIRING_REQUESTS: u32 = Command::LIST_PAIRING_REQUESTS as u32;
         const ACCEPT_PAIRING: u32 = Command::ACCEPT_PAIRING as u32;
         const LIST_PAIRED_ENDPOINTS: u32 = Command::LIST_PAIRED_ENDPOINTS as u32;
+        const INFO_REQUEST: u32 = Command::INFO_REQUEST as u32;
         match cmd {
             EXIT => return,
             CAPTURE => {
@@ -476,6 +477,43 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                     };
                     ctx.restart_me();
                 }
+            },
+            INFO_REQUEST => {
+                let master_pubkey_sha256;
+                let node_pubkey_sha256;
+                let mut node_expiry: i64 = 0;
+                {
+                    let config = config.lock().unwrap();
+                    master_pubkey_sha256 = match &config.master_key {
+                        Some(master_key) => {
+                            sha2::Sha256::digest(master_key.public_key.as_slice()).as_slice().to_vec()
+                        },
+                        None => {
+                            Vec::new()
+                        }
+                    };
+                    node_pubkey_sha256 = match &config.node_key {
+                        Some(node_key) => {
+                            node_expiry = node_key.replace_after.timestamp();
+                            sha2::Sha256::digest(node_key.key.public_key.as_slice()).as_slice().to_vec()
+                        },
+                        None => {
+                            Vec::new()
+                        }
+                    };
+                }
+                let info = controlproto::InfoResponse {
+                    master_pubkey_sha256,
+                    node_pubkey_sha256,
+                    node_expiry
+                };
+                match write_control_object(&mut stream, controlproto::ControlMsgType::INFO_RESPONSE, &info) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        println!("Failed to write control response");
+                        return;
+                    }
+                };
             },
             _ => {
                 println!("Unknown command: {}", cmd);

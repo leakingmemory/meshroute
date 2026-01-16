@@ -16,6 +16,7 @@ mod handshake;
 mod pair;
 mod encryption;
 mod endpoint;
+mod info;
 
 use std::env;
 use std::process::ExitCode;
@@ -91,6 +92,13 @@ fn main() -> ExitCode {
         } else if matches.free[0] == "finish" {
             if matches.free.len() == 3 {
                 return pair::run_finish(&meshopts, &matches.free[1], &matches.free[2]);
+            } else {
+                print_usage(&program, opts);
+                return ExitCode::from(1);
+            }
+        } else if matches.free[0] == "info" {
+            if matches.free.len() == 2 {
+                return info::run_info(&meshopts, &matches.free[1]);
             } else {
                 print_usage(&program, opts);
                 return ExitCode::from(1);

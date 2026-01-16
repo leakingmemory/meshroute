@@ -47,6 +47,13 @@ pub struct PairedList {
     pub endpoints: Vec<config::PairedEndpoint>
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct InfoResponse {
+    pub master_pubkey_sha256: Vec<u8>,
+    pub node_pubkey_sha256: Vec<u8>,
+    pub node_expiry: i64
+}
+
 #[repr(u32)]
 pub enum Command {
     EXIT = 0,
@@ -55,7 +62,8 @@ pub enum Command {
     PAIR = 3,
     LIST_PAIRING_REQUESTS = 4,
     ACCEPT_PAIRING = 5,
-    LIST_PAIRED_ENDPOINTS = 6
+    LIST_PAIRED_ENDPOINTS = 6,
+    INFO_REQUEST = 7
 }
 
 #[repr(u32)]
@@ -65,7 +73,8 @@ pub enum ControlMsgType {
     PAIRING_RESPONSE = 1,
     GENERIC_ERROR = 2,
     PAIRING_REQUEST_LIST = 3,
-    PAIRED_LIST = 4
+    PAIRED_LIST = 4,
+    INFO_RESPONSE = 5
 }
 
 pub struct ControlMsgHdr {
@@ -93,12 +102,14 @@ impl ControlMsgHdr {
         const GENERIC_ERROR: u32 = ControlMsgType::GENERIC_ERROR as u32;
         const PAIRING_REQUEST_LIST: u32 = ControlMsgType::PAIRING_REQUEST_LIST as u32;
         const PAIRED_LIST: u32 = ControlMsgType::PAIRED_LIST as u32;
+        const INFO_RESPONSE: u32 = ControlMsgType::INFO_RESPONSE as u32;
         let msg_type = match msg_type {
             HOST_PACKET => ControlMsgType::HOST_PACKET,
             PAIRING_RESPONSE => ControlMsgType::PAIRING_RESPONSE,
             GENERIC_ERROR => ControlMsgType::GENERIC_ERROR,
             PAIRING_REQUEST_LIST => ControlMsgType::PAIRING_REQUEST_LIST,
             PAIRED_LIST => ControlMsgType::PAIRED_LIST,
+            INFO_RESPONSE => ControlMsgType::INFO_RESPONSE,
             _ => return Err(())
         };
         Ok(Self { len, msg_type })
