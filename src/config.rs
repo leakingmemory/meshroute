@@ -32,13 +32,19 @@ pub struct PairedEndpoint {
     pub name: String
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct EndpointLink {
+    pub name: String
+}
+
 #[derive(Clone)]
 pub struct Config {
     pub master_key: Option<keyex::RsaKeyPair>,
     pub node_key: Option<keyex::NodeKey>,
     pub listen: Option<String>,
     pub pairing_requests: Vec<PairingRequest>,
-    pub paired_endpoints: Vec<PairedEndpoint>
+    pub paired_endpoints: Vec<PairedEndpoint>,
+    pub links: Vec<String>
 }
 
 impl ConfigBase {
@@ -108,7 +114,7 @@ impl ConfigBase {
 
 impl Config {
     pub fn new() -> Self {
-        Self { master_key: None, node_key: None, listen: None, pairing_requests: Vec::new(), paired_endpoints: Vec::new() }
+        Self { master_key: None, node_key: None, listen: None, pairing_requests: Vec::new(), paired_endpoints: Vec::new(),  links: Vec::new() }
     }
     pub fn from_file(filename: &str) -> Result<Self,()> {
         let config = match match ConfigBase::from_file(filename) {
@@ -167,7 +173,18 @@ impl Config {
             Some(r) => r,
             None => PairedEndpoint { master_pubkey_sha256: Vec::new(), name: "".to_string() }
         }).collect::<Vec<PairedEndpoint>>();
-        Ok(Self { master_key, node_key, listen, pairing_requests, paired_endpoints })
+        let link_records = config.get_by_name("links");
+        let links = link_records.iter().map(|r| match deserialize_from_slice::<EndpointLink>(r.data.as_slice()) {
+            Ok(l) => Some(l),
+            Err(_) => {
+                println!("Failed to deserialize link");
+                None
+            }
+        }).filter(|l| l.is_some()).map(|l| match l {
+            Some(l) => l.name,
+            None => "".to_string()
+        }).collect::<Vec<String>>();
+        Ok(Self { master_key, node_key, listen, pairing_requests, paired_endpoints, links })
     }
     pub fn save(&self, filename: &str) -> Result<(),()> {
         let mut config_base = ConfigBase::new();
@@ -220,6 +237,16 @@ impl Config {
                 }
             };
             config_base.data.push(ConfigRecord { name: "paired_endpoints".to_string(), data: pairing_request_data });
+        }
+        for link in &self.links {
+            let link_data = match serialize_to_vec(&EndpointLink {name: link.clone()}) {
+                Ok(d) => d,
+                Err(_) => {
+                    println!("Failed to serialize link object {}", link);
+                    return Err(())
+                }
+            };
+            config_base.data.push(ConfigRecord { name: "links".to_string(), data: link_data });
         }
         config_base.save(filename)
     }

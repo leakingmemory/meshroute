@@ -181,6 +181,9 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
         const ACCEPT_PAIRING: u32 = Command::ACCEPT_PAIRING as u32;
         const LIST_PAIRED_ENDPOINTS: u32 = Command::LIST_PAIRED_ENDPOINTS as u32;
         const INFO_REQUEST: u32 = Command::INFO_REQUEST as u32;
+        const LIST_LINKS: u32 = Command::LIST_LINKS as u32;
+        const ADD_LINK: u32 = Command::ADD_LINK as u32;
+        const REMOVE_LINK: u32 = Command::REMOVE_LINK as u32;
         match cmd {
             EXIT => return,
             CAPTURE => {
@@ -514,6 +517,84 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                         return;
                     }
                 };
+            },
+            LIST_LINKS => {
+                let mut links: Vec<String> = Vec::new();
+                {
+                    let config = config.lock().unwrap();
+                    for link in &config.links {
+                        links.push(link.clone());
+                    }
+                }
+                let links_resp = controlproto::LinksList {
+                    links
+                };
+                match write_control_object(&mut stream, controlproto::ControlMsgType::LINKS_LIST, &links_resp) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        println!("Failed to write control response");
+                        return;
+                    }
+                };
+            },
+            ADD_LINK => {
+                let add_link = match read_control_object::<controlproto::LinkCmd>(&mut stream) {
+                    Ok(a) => a,
+                    Err(_) => {
+                        println!("Failed to read control object for request add-link");
+                        return;
+                    }
+                };
+                {
+                    let mut config = config.lock().unwrap();
+                    config.links.retain(|l| !l.eq_ignore_ascii_case(add_link.name.as_str()));
+                    config.links.push(add_link.name);
+                    match config.save(config_file_name) {
+                        Ok(_) => {},
+                        Err(_) => {
+                            println!("Failed to save config");
+                            return;
+                        }
+                    }
+                }
+                match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_OK) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        println!("Failed to write control response");
+                        return;
+                    }
+                };
+                ctx.restart_me();
+                return;
+            },
+            REMOVE_LINK => {
+                let add_link = match read_control_object::<controlproto::LinkCmd>(&mut stream) {
+                    Ok(a) => a,
+                    Err(_) => {
+                        println!("Failed to read control object for request add-link");
+                        return;
+                    }
+                };
+                {
+                    let mut config = config.lock().unwrap();
+                    config.links.retain(|l| !l.eq_ignore_ascii_case(add_link.name.as_str()));
+                    match config.save(config_file_name) {
+                        Ok(_) => {},
+                        Err(_) => {
+                            println!("Failed to save config");
+                            return;
+                        }
+                    }
+                }
+                match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_OK) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        println!("Failed to write control response");
+                        return;
+                    }
+                };
+                ctx.restart_me();
+                return;
             },
             _ => {
                 println!("Unknown command: {}", cmd);

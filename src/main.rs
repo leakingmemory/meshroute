@@ -17,6 +17,7 @@ mod pair;
 mod encryption;
 mod endpoint;
 mod info;
+mod link;
 
 use std::env;
 use std::process::ExitCode;
@@ -99,6 +100,27 @@ fn main() -> ExitCode {
         } else if matches.free[0] == "info" {
             if matches.free.len() == 2 {
                 return info::run_info(&meshopts, &matches.free[1]);
+            } else {
+                print_usage(&program, opts);
+                return ExitCode::from(1);
+            }
+        } else if matches.free[0] == "list-links" {
+            if matches.free.len() == 2 {
+                return link::run_list_links(&meshopts, &matches.free[1]);
+            } else {
+                print_usage(&program, opts);
+                return ExitCode::from(1);
+            }
+        } else if matches.free[0] == "add-link" {
+            if matches.free.len() == 3 {
+                return link::run_add_link(&meshopts, &matches.free[1], &matches.free[2]);
+            } else {
+                print_usage(&program, opts);
+                return ExitCode::from(1);
+            }
+        } else if matches.free[0] == "remove-link" {
+            if matches.free.len() == 3 {
+                return link::run_remove_link(&meshopts, &matches.free[1], &matches.free[2]);
             } else {
                 print_usage(&program, opts);
                 return ExitCode::from(1);

@@ -24,6 +24,11 @@ pub struct AcceptPairingCmd {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct LinkCmd {
+    pub name: String
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct PairResult {
     pub master_pubkey_sha256: [u8; 32],
     pub name: String,
@@ -54,6 +59,11 @@ pub struct InfoResponse {
     pub node_expiry: i64
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct LinksList {
+    pub links: Vec<String>
+}
+
 #[repr(u32)]
 pub enum Command {
     EXIT = 0,
@@ -63,7 +73,10 @@ pub enum Command {
     LIST_PAIRING_REQUESTS = 4,
     ACCEPT_PAIRING = 5,
     LIST_PAIRED_ENDPOINTS = 6,
-    INFO_REQUEST = 7
+    INFO_REQUEST = 7,
+    LIST_LINKS = 8,
+    ADD_LINK = 9,
+    REMOVE_LINK = 10
 }
 
 #[repr(u32)]
@@ -74,7 +87,9 @@ pub enum ControlMsgType {
     GENERIC_ERROR = 2,
     PAIRING_REQUEST_LIST = 3,
     PAIRED_LIST = 4,
-    INFO_RESPONSE = 5
+    INFO_RESPONSE = 5,
+    LINKS_LIST = 6,
+    GENERIC_OK = 7
 }
 
 pub struct ControlMsgHdr {
@@ -103,6 +118,8 @@ impl ControlMsgHdr {
         const PAIRING_REQUEST_LIST: u32 = ControlMsgType::PAIRING_REQUEST_LIST as u32;
         const PAIRED_LIST: u32 = ControlMsgType::PAIRED_LIST as u32;
         const INFO_RESPONSE: u32 = ControlMsgType::INFO_RESPONSE as u32;
+        const LINKS_LIST: u32 = ControlMsgType::LINKS_LIST as u32;
+        const GENERIC_OK: u32 = ControlMsgType::GENERIC_OK as u32;
         let msg_type = match msg_type {
             HOST_PACKET => ControlMsgType::HOST_PACKET,
             PAIRING_RESPONSE => ControlMsgType::PAIRING_RESPONSE,
@@ -110,6 +127,8 @@ impl ControlMsgHdr {
             PAIRING_REQUEST_LIST => ControlMsgType::PAIRING_REQUEST_LIST,
             PAIRED_LIST => ControlMsgType::PAIRED_LIST,
             INFO_RESPONSE => ControlMsgType::INFO_RESPONSE,
+            LINKS_LIST => ControlMsgType::LINKS_LIST,
+            GENERIC_OK => ControlMsgType::GENERIC_OK,
             _ => return Err(())
         };
         Ok(Self { len, msg_type })
