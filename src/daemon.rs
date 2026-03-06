@@ -17,7 +17,7 @@ use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use sha2::Digest;
-use crate::{config, controlproto, endpoint, ethernet, ethertable, eventproto, filedes, handshake, keyex, opts};
+use crate::{config, controlproto, endpoint, ethernet, ethertable, eventproto, filedes, handshake, keyex, opts, uplink};
 use crate::config::{PairedEndpoint, PairingRequest};
 use crate::controlproto::{Command, PairResult};
 use crate::controlproto::ControlMsgType::HOST_PACKET;
@@ -778,6 +778,7 @@ pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCt
 struct WorkerContext {
     pub name: String,
     pub config: Arc<Mutex<config::Config>>,
+    pub uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>,
     pub config_filename: String,
     pub event_writer: PipeWriter,
     pub tap_dev: filedes::FileDes,
@@ -789,6 +790,7 @@ impl Clone for WorkerContext {
         Self {
             name: self.name.clone(),
             config: self.config.clone(),
+            uplinks: self.uplinks.clone(),
             config_filename: self.config_filename.clone(),
             event_writer: self.event_writer.try_clone().unwrap(),
             tap_dev: self.tap_dev.clone(),
@@ -823,6 +825,7 @@ impl WorkerContext {
             };
             if let Some(listen_socket) = listen_socket {
                 let config = self.config.clone();
+                let uplinks = self.uplinks.clone();
                 let self_name = self.name.clone();
                 let config_filename = self.config_filename.clone();
                 let restart_me_writer = self.restart_me_writer.try_clone().unwrap();
@@ -837,6 +840,7 @@ impl WorkerContext {
                             }
                         };
                         let config = config.clone();
+                        let uplinks = uplinks.clone();
                         client_threads.retain(move |thread| {
                             !thread.is_finished()
                         });
@@ -851,90 +855,117 @@ impl WorkerContext {
                             let mut endpoint = endpoint::Endpoint::new(connection, endpoint_security);
                             // TODO - should at least have timeouts to avoid denial of service
                             let mut req_vec: Vec<u8> = Vec::new();
-                            let req_type = match endpoint.recv(&mut req_vec) {
-                                Ok(req_type) => req_type,
-                                Err(_) => return
-                            };
-                            {
-                                let config = config.lock().unwrap();
-                                for paired in &config.paired_endpoints {
-                                    let mut matching = paired.master_pubkey_sha256.len() == endpoint.endpoint_security.master_pubkey_sha256.len();
-                                    if matching {
-                                        for i in 0..endpoint.endpoint_security.master_pubkey_sha256.len() {
-                                            if endpoint.endpoint_security.master_pubkey_sha256[i] != paired.master_pubkey_sha256[i] {
-                                                matching = false;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    if matching {
-                                        endpoint.name = Some(paired.name.clone());
-                                    }
-                                }
-                            }
-                            if matches!(req_type, EndpointMessage::PAIRING_REQUEST) {
-                                let pairing_request = match deserialize_from_slice::<endpoint::PairingRequest>(&req_vec) {
-                                    Ok(r) => r,
-                                    Err(_) => {
-                                        println!("Failed to deserialize pairing request");
-                                        return;
-                                    }
+                            loop {
+                                let req_type = match endpoint.recv(&mut req_vec) {
+                                    Ok(req_type) => req_type,
+                                    Err(_) => return
                                 };
                                 {
-                                    let mut config = config.lock().unwrap();
-                                    config.pairing_requests.retain(|pairing_request| {
-                                        if pairing_request.expires < chrono::Utc::now().timestamp() {
-                                            return false;
-                                        }
-                                        if pairing_request.master_pubkey_sha256.len() != endpoint.endpoint_security.master_pubkey_sha256.len() {
-                                            return true;
-                                        }
-                                        for i in 0..endpoint.endpoint_security.master_pubkey_sha256.len() {
-                                            if endpoint.endpoint_security.master_pubkey_sha256[i] != pairing_request.master_pubkey_sha256[i] {
-                                                return true;
+                                    let config = config.lock().unwrap();
+                                    for paired in &config.paired_endpoints {
+                                        let mut matching = paired.master_pubkey_sha256.len() == endpoint.endpoint_security.master_pubkey_sha256.len();
+                                        if matching {
+                                            for i in 0..endpoint.endpoint_security.master_pubkey_sha256.len() {
+                                                if endpoint.endpoint_security.master_pubkey_sha256[i] != paired.master_pubkey_sha256[i] {
+                                                    matching = false;
+                                                    break;
+                                                }
                                             }
                                         }
-                                        false
-                                    });
-                                    config.pairing_requests.push(PairingRequest {
-                                        name: pairing_request.name,
-                                        master_pubkey_sha256: endpoint.endpoint_security.master_pubkey_sha256.clone(),
-                                        expires: chrono::Utc::now().timestamp() + (5*24*60*60)
-                                    });
-                                    match config.save(config_filename.as_str()) {
-                                        Ok(_) => {},
-                                        Err(_) => {
-                                            println!("Failed to save config with pairing request");
-                                            return;
+                                        if matching {
+                                            endpoint.name = Some(paired.name.clone());
                                         }
-                                    };
-                                }
-                                let pairing_result = endpoint::PairingResponse {
-                                    name: self_name.clone()
-                                };
-                                let pairing_result = match serialize_to_vec(&pairing_result) {
-                                    Ok(p) => p,
-                                    Err(_) => {
-                                        println!("Failed to serialize pairing response");
-                                        return;
-                                    }
-                                };
-                                match endpoint.send(EndpointMessage::PAIRING_RESPONSE, pairing_result.as_slice()) {
-                                    Ok(_) => {},
-                                    Err(_) => {
-                                        println!("Failed to send pairing response");
-                                        return;
                                     }
                                 }
-                                println!("Stopping network worker process and equesting restart");
-                                let buf = [1u8];
-                                match restart_me_writer.write(&buf) {
-                                    Ok(_) => {},
-                                    Err(_) => {
-                                        println!("Failed to write to restart pipe");
+                                match req_type {
+                                    EndpointMessage::PAIRING_REQUEST => {
+                                        let pairing_request = match deserialize_from_slice::<endpoint::PairingRequest>(&req_vec) {
+                                            Ok(r) => r,
+                                            Err(_) => {
+                                                println!("Failed to deserialize pairing request");
+                                                return;
+                                            }
+                                        };
+                                        {
+                                            let mut config = config.lock().unwrap();
+                                            config.pairing_requests.retain(|pairing_request| {
+                                                if pairing_request.expires < chrono::Utc::now().timestamp() {
+                                                    return false;
+                                                }
+                                                if pairing_request.master_pubkey_sha256.len() != endpoint.endpoint_security.master_pubkey_sha256.len() {
+                                                    return true;
+                                                }
+                                                for i in 0..endpoint.endpoint_security.master_pubkey_sha256.len() {
+                                                    if endpoint.endpoint_security.master_pubkey_sha256[i] != pairing_request.master_pubkey_sha256[i] {
+                                                        return true;
+                                                    }
+                                                }
+                                                false
+                                            });
+                                            config.pairing_requests.push(PairingRequest {
+                                                name: pairing_request.name,
+                                                master_pubkey_sha256: endpoint.endpoint_security.master_pubkey_sha256.clone(),
+                                                expires: chrono::Utc::now().timestamp() + (5 * 24 * 60 * 60)
+                                            });
+                                            match config.save(config_filename.as_str()) {
+                                                Ok(_) => {},
+                                                Err(_) => {
+                                                    println!("Failed to save config with pairing request");
+                                                    return;
+                                                }
+                                            };
+                                        }
+                                        let pairing_result = endpoint::PairingResponse {
+                                            name: self_name.clone()
+                                        };
+                                        let pairing_result = match serialize_to_vec(&pairing_result) {
+                                            Ok(p) => p,
+                                            Err(_) => {
+                                                println!("Failed to serialize pairing response");
+                                                return;
+                                            }
+                                        };
+                                        match endpoint.send(EndpointMessage::PAIRING_RESPONSE, pairing_result.as_slice()) {
+                                            Ok(_) => {},
+                                            Err(_) => {
+                                                println!("Failed to send pairing response");
+                                                return;
+                                            }
+                                        }
+                                        println!("Stopping network worker process and equesting restart");
+                                        let buf = [1u8];
+                                        match restart_me_writer.write(&buf) {
+                                            Ok(_) => {},
+                                            Err(_) => {
+                                                println!("Failed to write to restart pipe");
+                                            }
+                                        }
+                                        std::process::exit(0);
+                                    }
+                                    EndpointMessage::UPLINK => {
+                                        if let Some(endpoint_name) = &endpoint.name {
+                                            let endpoint_name = endpoint_name.clone();
+                                            println!("Uplink accepted for {}", endpoint_name);
+                                            uplink::run_uplink(uplinks, &mut endpoint);
+                                            println!("Uplink closed for {}", endpoint_name);
+                                        } else {
+                                            println!("Uplink rejected");
+                                            endpoint.send(EndpointMessage::GENERIC_ERROR, b"").unwrap();
+                                        }
+                                        break;
+                                    },
+                                    EndpointMessage::PAIRING_RESPONSE => {
+                                        println!("Unexpected pairing response received");
+                                        break;
+                                    }
+                                    EndpointMessage::GENERIC_ERROR => {
+                                        println!("Endpoint {} returned generic error", match &endpoint.name {
+                                            Some(name) => name.as_str(),
+                                            None => "unknown"
+                                        });
+                                        break;
                                     }
                                 }
-                                std::process::exit(0);
                             }
                         });
                         client_threads.push(network_handler);
@@ -943,6 +974,58 @@ impl WorkerContext {
             }
         } else {
             println!("No listening socket configured");
+        }
+        let links_from_config;
+        {
+            let config = self.config.lock().unwrap();
+            links_from_config = config.links.clone();
+        }
+        for link_from_config in links_from_config {
+            let config = self.config.clone();
+            let uplinks = self.uplinks.clone();
+            thread::spawn(move || {
+                let config = config;
+                let uplinks = uplinks;
+                loop {
+                    println!("Opening connection {}", link_from_config);
+                    let mut connection = match TcpStream::connect(link_from_config.as_str()) {
+                        Ok(c) => c,
+                        Err(_) => {
+                            println!("Failed to connect to {}", link_from_config);
+                            thread::sleep(Duration::from_secs(1));
+                            println!("Reconnecting after 10 seconds..");
+                            thread::sleep(Duration::from_secs(9));
+                            continue;
+                        }
+                    };
+                    let endpoint_security = match handshake::run_client_handshake(&mut connection, &config) {
+                        Ok(sec) => sec,
+                        Err(_) => {
+                            println!("Handshake failed with {}", link_from_config);
+                            thread::sleep(Duration::from_secs(1));
+                            println!("Reconnecting after 10 seconds..");
+                            thread::sleep(Duration::from_secs(9));
+                            continue;
+                        }
+                    };
+                    let mut endpoint = endpoint::Endpoint::new(connection, endpoint_security);
+                    match endpoint.send(EndpointMessage::UPLINK, b"") {
+                        Ok(_) => {},
+                        Err(_) => {
+                            println!("Failed to send uplink message to {}", link_from_config);
+                            thread::sleep(Duration::from_secs(1));
+                            println!("Reconnecting after 10 seconds..");
+                            thread::sleep(Duration::from_secs(9));
+                            continue;
+                        }
+                    };
+                    uplink::run_uplink(uplinks.clone(), &mut endpoint);
+                    println!("Lost connection {}", link_from_config);
+                    thread::sleep(Duration::from_secs(1));
+                    println!("Reconnecting after 10 seconds..");
+                    thread::sleep(Duration::from_secs(9));
+                }
+            });
         }
         let mut pktbuf: Vec<u8> = Vec::new();
         loop {
@@ -1302,7 +1385,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
                 }
             };
             let forkedworker: Option<ForkedWorker> = None;
-            ctx = WorkerContextThreadSafe { restart_me_writer: Arc::new(Mutex::new(restart_me_writer.try_clone().unwrap())), forkedworker: Arc::new(Mutex::new(forkedworker)), ctx: Arc::new(Mutex::new(WorkerContext {name: name.to_string(), config: config.clone(), config_filename: config_file_name.clone(), event_writer, tap_dev, restart_me_writer: restart_me_writer.try_clone().unwrap()})) };
+            ctx = WorkerContextThreadSafe { restart_me_writer: Arc::new(Mutex::new(restart_me_writer.try_clone().unwrap())), forkedworker: Arc::new(Mutex::new(forkedworker)), ctx: Arc::new(Mutex::new(WorkerContext {name: name.to_string(), config: config.clone(), uplinks: Arc::new(Mutex::new(Vec::new())), config_filename: config_file_name.clone(), event_writer, tap_dev, restart_me_writer: restart_me_writer.try_clone().unwrap()})) };
             ctx.run_worker_process();
         }
         let eventworker_ctx = eventworker_ctx.clone();

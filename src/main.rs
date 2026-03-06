@@ -18,6 +18,7 @@ mod encryption;
 mod endpoint;
 mod info;
 mod link;
+mod uplink;
 
 use std::env;
 use std::process::ExitCode;
