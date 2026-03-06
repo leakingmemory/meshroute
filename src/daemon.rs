@@ -1083,6 +1083,13 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
     println!("config file: {}", config_file_name);
     println!("socket file: {}", socket_file_name);
     println!("lock file: {}", lock_file_name);
+    let socket_dir = std::path::Path::new(&lock_file_name).parent().unwrap();
+    if !socket_dir.exists() {
+        if let Err(_) = std::fs::create_dir_all(socket_dir) {
+            println!("failed to create directory for socket and lock files: {}", socket_dir.display());
+            return ExitCode::from(1);
+        }
+    }
     let file = match std::fs::File::create(lock_file_name.clone()) {
         Ok(f) => f,
         Err(_) => {
