@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex};
 use std::net::TcpStream;
 use serde::{Deserialize, Serialize};
 use bson::{deserialize_from_slice, serialize_to_vec};
-use crate::{endpoint, uplink};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
+use crate::{endpoint, ethertable, uplink};
 
 // An uplink is a connection to another endpoint
 // We may have multiple uplinks to the same endpoint
@@ -19,7 +21,8 @@ pub struct Uplink {
     // What endpoints can be reached through this endpoint, not including this endpoint
     pub reachable_endpoints: Vec<Vec<u8>>,
     // Which reachable endpoints have we reported to the endpoint
-    pub reported_endpoints: Vec<Vec<u8>>
+    pub reported_endpoints: Vec<Vec<u8>>,
+    pub mac_table: Arc<Mutex<ethertable::MacTable>>
 }
 
 impl Uplink {
@@ -29,7 +32,8 @@ impl Uplink {
             encryption_out,
             remote_endpoint_hash,
             reachable_endpoints: Vec::new(),
-            reported_endpoints: Vec::new()
+            reported_endpoints: Vec::new(),
+            mac_table: Arc::new(Mutex::new(ethertable::MacTable::new()))
         }
     }
     
@@ -41,6 +45,32 @@ impl Uplink {
         };
         let mut buf = Vec::with_capacity(msg_body.len() + 2);
         let msg_type = UplinkMsgType::MY_CONNECTIONS as u16;
+        buf.extend_from_slice(&msg_type.to_be_bytes());
+        buf.append(&mut msg_body);
+        
+        match self.encryption_out.encrypt(&mut buf) {
+            Ok(_) => {},
+            Err(_) => return Err(())
+        }
+        
+        let mut final_buf = Vec::with_capacity(buf.len() + 4);
+        let msg_len = buf.len() as u32;
+        final_buf.extend_from_slice(&msg_len.to_be_bytes());
+        final_buf.extend_from_slice(&buf);
+        
+        match self.connection.write_all(&final_buf) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(())
+        }
+    }
+
+    pub fn send_packet(&mut self, packet: &UplinkPacket) -> Result<(), ()> {
+        let mut msg_body = match serialize_to_vec(packet) {
+            Ok(b) => b,
+            Err(_) => return Err(())
+        };
+        let mut buf = Vec::with_capacity(msg_body.len() + 2);
+        let msg_type = UplinkMsgType::PACKET as u16;
         buf.extend_from_slice(&msg_type.to_be_bytes());
         buf.append(&mut msg_body);
         
@@ -166,8 +196,119 @@ fn uplink_change(uplinks: &Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>) {
     while update_all_uplinks(uplinks) > 0 {}
 }
 
-pub fn run_uplink(uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, endpoint: &mut endpoint::Endpoint) {
+pub fn forward_packet(packet: &UplinkPacket, uplinks: &Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>) {
+    let mut uplinks_lock = uplinks.lock().unwrap().clone();
+    let mut rng = thread_rng();
+    uplinks_lock.shuffle(&mut rng);
+    let multicast = packet.destination.is_empty();
+    
+    if multicast {
+        for uplink_arc in &uplinks_lock {
+            let mut uplink = uplink_arc.lock().unwrap();
+            
+            // Don't send to any uplink that is in the trail-list
+            let mut in_trail = false;
+            for t in &packet.trail {
+                if *t == uplink.remote_endpoint_hash {
+                    in_trail = true;
+                    break;
+                }
+            }
+            if in_trail {
+                continue;
+            }
+            
+            match uplink.send_packet(packet) {
+                Ok(_) => {},
+                Err(_) => {
+                    println!("Failed to forward multicast packet to an uplink");
+                }
+            }
+        }
+    } else {
+        // Unicast: check for direct links first
+        let mut sent = false;
+        for uplink_arc in &uplinks_lock {
+            let mut uplink = uplink_arc.lock().unwrap();
+            
+            // Don't send to any uplink that is in the trail-list
+            let mut in_trail = false;
+            for t in &packet.trail {
+                if *t == uplink.remote_endpoint_hash {
+                    in_trail = true;
+                    break;
+                }
+            }
+            if in_trail {
+                continue;
+            }
+            
+            if uplink.remote_endpoint_hash == packet.destination {
+                match uplink.send_packet(packet) {
+                    Ok(_) => {
+                        sent = true;
+                        break; // Sent successfully, don't send over other direct links
+                    },
+                    Err(_) => {
+                        println!("Failed to forward unicast packet to a direct uplink");
+                    }
+                }
+            }
+        }
+        
+        if !sent {
+            // No direct link found, try reachable endpoints
+            for uplink_arc in &uplinks_lock {
+                let mut uplink = uplink_arc.lock().unwrap();
+                
+                // Don't send to any uplink that is in the trail-list
+                let mut in_trail = false;
+                for t in &packet.trail {
+                    if *t == uplink.remote_endpoint_hash {
+                        in_trail = true;
+                        break;
+                    }
+                }
+                if in_trail {
+                    continue;
+                }
+                
+                let mut matches = false;
+                for r in &uplink.reachable_endpoints {
+                    if *r == packet.destination {
+                        matches = true;
+                        break;
+                    }
+                }
+                
+                if matches {
+                    match uplink.send_packet(packet) {
+                        Ok(_) => {
+                            sent = true;
+                            break; // Sent successfully, don't send over other indirect links
+                        },
+                        Err(_) => {
+                            println!("Failed to forward unicast packet to a reachable uplink");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub fn run_uplink(uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, uplink_mac_tables: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<ethertable::MacTable>>>>>, endpoint: &mut endpoint::Endpoint) {
+    println!("Run uplink");
     let current_uplink = Arc::new(Mutex::new(uplink::Uplink::new(endpoint.connection.try_clone().unwrap(), endpoint.endpoint_security.encryption_out.clone(), endpoint.endpoint_security.master_pubkey_sha256.clone())));
+    {
+        let mut current_uplink = current_uplink.lock().unwrap();
+        let mut uplink_mac_tables = uplink_mac_tables.lock().unwrap();
+        if uplink_mac_tables.contains_key(&current_uplink.remote_endpoint_hash) {
+            current_uplink.mac_table = uplink_mac_tables.get(&current_uplink.remote_endpoint_hash).unwrap().clone();
+        } else {
+            uplink_mac_tables.insert(current_uplink.remote_endpoint_hash.clone(), Arc::new(Mutex::new(ethertable::MacTable::new())));
+        }
+    }
     {
         let mut uplinks_lock = uplinks.lock().unwrap();
         uplinks_lock.push(current_uplink.clone());
@@ -229,7 +370,7 @@ pub fn run_uplink(uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, endpoint
                 match deserialize_from_slice::<UplinkPacket>(&buf[2..]) {
                     Ok(_msg) => {
                         // For now, don't implement actually doing anything
-                        // println!("Received UplinkPacket: {:?}", _msg);
+                        println!("Received UplinkPacket: {:?}", _msg);
                     },
                     Err(_) => {
                         println!("Failed to deserialize UplinkPacket message");

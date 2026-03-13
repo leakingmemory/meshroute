@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ffi::CStr;
 use std::io::{pipe, PipeReader, PipeWriter, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -615,15 +616,23 @@ pub struct TunIfreq {
 pub struct EthernetHandlerCtx {
     pub frame: ethernet::EthernetFrame,
     pub event_writer: PipeWriter,
-    pub mac_table: ethertable::MacTable
+    pub mac_table: ethertable::MacTable,
+    pub uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>,
+    pub uplink_mactables: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<ethertable::MacTable>>>>>,
+    pub masterkey_hash: Vec<u8>,
+    pub serial: u32
 }
 
 impl EthernetHandlerCtx {
-    pub fn new(event_writer: PipeWriter) -> Self {
+    pub fn new(event_writer: PipeWriter, uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, uplink_mactables: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<ethertable::MacTable>>>>>, masterkey_hash: Vec<u8>) -> Self {
         Self {
             frame: ethernet::EthernetFrame::new(),
             event_writer,
-            mac_table: ethertable::MacTable::new()
+            mac_table: ethertable::MacTable::new(),
+            uplinks,
+            uplink_mactables,
+            masterkey_hash,
+            serial: 0
         }
     }
 }
@@ -632,7 +641,20 @@ pub fn handle_ethernet_frame(ctx: &mut EthernetHandlerCtx) -> Result<(),()> {
     if (&ctx.frame.src_mac).is_individual() {
         ctx.mac_table.borrow_entry(&ctx.frame.src_mac, |entry| {
             entry.location = LOCAL;
-        })
+        });
+    }
+    let mut uplink_addr: Vec<u8> = Vec::new();
+    {
+        let uplink_mactables = ctx.uplink_mactables.lock().unwrap().clone();
+        for (key, mactable) in uplink_mactables {
+            let mut mactable = mactable.lock().unwrap();
+            if (&ctx.frame.src_mac).is_individual() {
+                mactable.remove_entry_if_exists(&ctx.frame.src_mac);
+            }
+            if uplink_addr.is_empty() && (&ctx.frame.dst_mac).is_individual() && mactable.has_entry(&ctx.frame.dst_mac) {
+                uplink_addr = key;
+            }
+        }
     }
     match serialize_to_vec(&ctx.frame) {
         Ok(data) => {
@@ -645,9 +667,18 @@ pub fn handle_ethernet_frame(ctx: &mut EthernetHandlerCtx) -> Result<(),()> {
                 Ok(_) => ctx.event_writer.write_all(&data),
                 Err(_) => return Err(())
             } {
-                Ok(_) => Ok(()),
-                Err(_) => Err(())
+                Ok(_) => {},
+                Err(_) => return Err(())
             }
+            let fwd_packet: uplink::UplinkPacket = uplink::UplinkPacket {
+                source: ctx.masterkey_hash.clone(),
+                trail: Vec::new(),
+                destination: uplink_addr,
+                payload: data,
+                serial: ctx.serial.wrapping_add(1)
+            };
+            uplink::forward_packet(&fwd_packet, &ctx.uplinks);
+            Ok(())
         },
         Err(_) => {
             println!("Failed to serialize ethernet frame event");
@@ -778,7 +809,6 @@ pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCt
 struct WorkerContext {
     pub name: String,
     pub config: Arc<Mutex<config::Config>>,
-    pub uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>,
     pub config_filename: String,
     pub event_writer: PipeWriter,
     pub tap_dev: filedes::FileDes,
@@ -790,7 +820,6 @@ impl Clone for WorkerContext {
         Self {
             name: self.name.clone(),
             config: self.config.clone(),
-            uplinks: self.uplinks.clone(),
             config_filename: self.config_filename.clone(),
             event_writer: self.event_writer.try_clone().unwrap(),
             tap_dev: self.tap_dev.clone(),
@@ -801,6 +830,25 @@ impl Clone for WorkerContext {
 
 impl WorkerContext {
     pub fn run_worker(&mut self) -> libc::c_int {
+        let uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>> = Arc::new(Mutex::new(Vec::new()));
+        let uplink_mac_tables: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<ethertable::MacTable>>>>> = Arc::new(Mutex::new(HashMap::new()));
+        let listen_addr;
+        let masterkey_hash;
+        {
+            let masterkey_pub;
+            {
+                let config = self.config.lock().unwrap();
+                listen_addr = config.listen.clone();
+                let master_key = &config.master_key;
+                let public_key = if let Some(master_key) = master_key {
+                    Some(master_key.public_key.clone())
+                } else {
+                    None
+                };
+                masterkey_pub = public_key.unwrap();
+            }
+            masterkey_hash = sha2::Sha256::digest(masterkey_pub.as_slice()).as_slice().to_vec();
+        }
         println!("Network worker process initializing");
         let mut handlerctx = EthernetHandlerCtx::new(match self.event_writer.try_clone() {
             Ok(pw) => pw,
@@ -808,12 +856,7 @@ impl WorkerContext {
                 println!("Failed to clone event writer");
                 return 1;
             }
-        });
-        let listen_addr;
-        {
-            let config = self.config.lock().unwrap();
-            listen_addr = config.listen.clone();
-        }
+        }, uplinks.clone(), uplink_mac_tables.clone(), masterkey_hash);
         if let Some(listen_addr) = listen_addr {
             println!("Listening on tcp {}", listen_addr);
             let listen_socket = match TcpListener::bind(listen_addr.as_str()) {
@@ -825,7 +868,8 @@ impl WorkerContext {
             };
             if let Some(listen_socket) = listen_socket {
                 let config = self.config.clone();
-                let uplinks = self.uplinks.clone();
+                let uplinks = uplinks.clone();
+                let uplink_mac_tables = uplink_mac_tables.clone();
                 let self_name = self.name.clone();
                 let config_filename = self.config_filename.clone();
                 let restart_me_writer = self.restart_me_writer.try_clone().unwrap();
@@ -841,6 +885,7 @@ impl WorkerContext {
                         };
                         let config = config.clone();
                         let uplinks = uplinks.clone();
+                        let uplink_mac_tables = uplink_mac_tables.clone();
                         client_threads.retain(move |thread| {
                             !thread.is_finished()
                         });
@@ -946,7 +991,7 @@ impl WorkerContext {
                                         if let Some(endpoint_name) = &endpoint.name {
                                             let endpoint_name = endpoint_name.clone();
                                             println!("Uplink accepted for {}", endpoint_name);
-                                            uplink::run_uplink(uplinks, &mut endpoint);
+                                            uplink::run_uplink(uplinks, uplink_mac_tables, &mut endpoint);
                                             println!("Uplink closed for {}", endpoint_name);
                                         } else {
                                             println!("Uplink rejected");
@@ -982,10 +1027,12 @@ impl WorkerContext {
         }
         for link_from_config in links_from_config {
             let config = self.config.clone();
-            let uplinks = self.uplinks.clone();
+            let uplinks = uplinks.clone();
+            let uplink_mac_tables = uplink_mac_tables.clone();
             thread::spawn(move || {
                 let config = config;
                 let uplinks = uplinks;
+                let uplink_mac_tables = uplink_mac_tables;
                 loop {
                     println!("Opening connection {}", link_from_config);
                     let mut connection = match TcpStream::connect(link_from_config.as_str()) {
@@ -1019,7 +1066,7 @@ impl WorkerContext {
                             continue;
                         }
                     };
-                    uplink::run_uplink(uplinks.clone(), &mut endpoint);
+                    uplink::run_uplink(uplinks.clone(), uplink_mac_tables.clone(), &mut endpoint);
                     println!("Lost connection {}", link_from_config);
                     thread::sleep(Duration::from_secs(1));
                     println!("Reconnecting after 10 seconds..");
@@ -1385,7 +1432,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
                 }
             };
             let forkedworker: Option<ForkedWorker> = None;
-            ctx = WorkerContextThreadSafe { restart_me_writer: Arc::new(Mutex::new(restart_me_writer.try_clone().unwrap())), forkedworker: Arc::new(Mutex::new(forkedworker)), ctx: Arc::new(Mutex::new(WorkerContext {name: name.to_string(), config: config.clone(), uplinks: Arc::new(Mutex::new(Vec::new())), config_filename: config_file_name.clone(), event_writer, tap_dev, restart_me_writer: restart_me_writer.try_clone().unwrap()})) };
+            ctx = WorkerContextThreadSafe { restart_me_writer: Arc::new(Mutex::new(restart_me_writer.try_clone().unwrap())), forkedworker: Arc::new(Mutex::new(forkedworker)), ctx: Arc::new(Mutex::new(WorkerContext {name: name.to_string(), config: config.clone(), config_filename: config_file_name.clone(), event_writer, tap_dev, restart_me_writer: restart_me_writer.try_clone().unwrap()})) };
             ctx.run_worker_process();
         }
         let eventworker_ctx = eventworker_ctx.clone();

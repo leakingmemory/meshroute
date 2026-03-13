@@ -29,7 +29,7 @@ impl MacTableLevel3 {
 
 #[derive(Clone)]
 pub struct MacTableLevel2 {
-    pub entries: [Option<MacTableLevel3>; 256]
+    pub entries: [Option<Box<MacTableLevel3>>; 256]
 }
 
 impl MacTableLevel2 {
@@ -57,7 +57,7 @@ impl MacTableLevel2 {
 
 #[derive(Clone)]
 pub struct MacTable {
-    pub entries: [Option<MacTableLevel2>; 256]
+    pub entries: [Option<Box<MacTableLevel2>>; 256]
 }
 
 impl MacTable {
@@ -90,14 +90,14 @@ impl MacTable {
         let level2 = match self.entries[idx1] {
             Some(ref mut level2) => level2,
             None => {
-                self.entries[idx1] = Some(MacTableLevel2::new());
+                self.entries[idx1] = Some(Box::new(MacTableLevel2::new()));
                 self.entries[idx1].as_mut().unwrap()
             }
         };
         let level3 = match level2.entries[idx2] {
             Some(ref mut level3) => level3,
             None => {
-                level2.entries[idx2] = Some(MacTableLevel3::new());
+                level2.entries[idx2] = Some(Box::new(MacTableLevel3::new()));
                 level2.entries[idx2].as_mut().unwrap()
             }
         };
@@ -109,6 +109,39 @@ impl MacTable {
         level3.entries.push(MacEntry { addr: *addr, location: MacEntryLocation::UNKNOWN });
         let idx3 = level3.entries.len()-1;
         scope(&mut level3.entries[idx3])
+    }
+    pub fn remove_entry_if_exists(&mut self, addr: &[u8; 6]) {
+        let mac_hash = addr.hash_value();
+        println!("hash: {:x}", mac_hash);
+        let idx1 = (mac_hash >> 8) as usize;
+        let idx2 = (mac_hash & 0xff) as usize;
+        let level2 = match self.entries[idx1] {
+            Some(ref mut level2) => level2,
+            None => return
+        };
+        let level3 = match level2.entries[idx2] {
+            Some(ref mut level3) => level3,
+            None => return
+        };
+        level3.entries.retain(|entry| entry.addr != *addr);
+    }
+    pub fn has_entry(&mut self, addr: &[u8; 6]) -> bool {
+        let mac_hash = addr.hash_value();
+        println!("hash: {:x}", mac_hash);
+        let idx1 = (mac_hash >> 8) as usize;
+        let idx2 = (mac_hash & 0xff) as usize;
+        let level2 = match self.entries[idx1] {
+            Some(ref mut level2) => level2,
+            None => return false
+        };
+        let level3 = match level2.entries[idx2] {
+            Some(ref mut level3) => level3,
+            None => return false
+        };
+        let addr = addr.clone();
+        level3.entries.iter().any(move |&entry| {
+            entry.addr == addr
+        })
     }
 }
 
