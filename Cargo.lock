@@ -471,6 +471,7 @@ dependencies = [
  "chrono",
  "getopts",
  "libc",
+ "num-traits",
  "rand 0.8.5",
  "rsa",
  "serde",

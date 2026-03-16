@@ -19,6 +19,7 @@ mod endpoint;
 mod info;
 mod link;
 mod uplink;
+mod serialwindow;
 
 use std::env;
 use std::process::ExitCode;
