@@ -18,7 +18,7 @@ use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use sha2::Digest;
-use crate::{config, controlproto, endpoint, ethernet, ethertable, eventproto, filedes, handshake, keyex, opts, uplink};
+use crate::{config, controlproto, endpoint, ethernet, ethertable, eventproto, filedes, handshake, keyex, opts, serialwindow, uplink};
 use crate::config::{PairedEndpoint, PairingRequest};
 use crate::controlproto::{Command, PairResult};
 use crate::controlproto::ControlMsgType::HOST_PACKET;
@@ -670,12 +670,13 @@ pub fn handle_ethernet_frame(ctx: &mut EthernetHandlerCtx) -> Result<(),()> {
                 Ok(_) => {},
                 Err(_) => return Err(())
             }
+            ctx.serial = ctx.serial.wrapping_add(1);
             let fwd_packet: uplink::UplinkPacket = uplink::UplinkPacket {
                 source: ctx.masterkey_hash.clone(),
                 trail: Vec::new(),
                 destination: uplink_addr,
                 payload: data,
-                serial: ctx.serial.wrapping_add(1)
+                serial: ctx.serial
             };
             uplink::forward_packet(&fwd_packet, &ctx.uplinks);
             Ok(())
@@ -832,6 +833,7 @@ impl WorkerContext {
     pub fn run_worker(&mut self) -> libc::c_int {
         let uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>> = Arc::new(Mutex::new(Vec::new()));
         let uplink_mac_tables: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<ethertable::MacTable>>>>> = Arc::new(Mutex::new(HashMap::new()));
+        let uplink_serial_window: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<serialwindow::SerialWindow<u32,128>>>>>> = Arc::new(Mutex::new(HashMap::new()));
         let listen_addr;
         let masterkey_hash;
         {
@@ -870,6 +872,7 @@ impl WorkerContext {
                 let config = self.config.clone();
                 let uplinks = uplinks.clone();
                 let uplink_mac_tables = uplink_mac_tables.clone();
+                let uplink_serial_window = uplink_serial_window.clone();
                 let self_name = self.name.clone();
                 let config_filename = self.config_filename.clone();
                 let restart_me_writer = self.restart_me_writer.try_clone().unwrap();
@@ -886,6 +889,7 @@ impl WorkerContext {
                         let config = config.clone();
                         let uplinks = uplinks.clone();
                         let uplink_mac_tables = uplink_mac_tables.clone();
+                        let uplink_serial_window = uplink_serial_window.clone();
                         client_threads.retain(move |thread| {
                             !thread.is_finished()
                         });
@@ -991,7 +995,7 @@ impl WorkerContext {
                                         if let Some(endpoint_name) = &endpoint.name {
                                             let endpoint_name = endpoint_name.clone();
                                             println!("Uplink accepted for {}", endpoint_name);
-                                            uplink::run_uplink(uplinks, uplink_mac_tables, &mut endpoint);
+                                            uplink::run_uplink(uplinks, uplink_mac_tables, uplink_serial_window, &mut endpoint);
                                             println!("Uplink closed for {}", endpoint_name);
                                         } else {
                                             println!("Uplink rejected");
@@ -1029,6 +1033,7 @@ impl WorkerContext {
             let config = self.config.clone();
             let uplinks = uplinks.clone();
             let uplink_mac_tables = uplink_mac_tables.clone();
+            let uplink_serial_window = uplink_serial_window.clone();
             thread::spawn(move || {
                 let config = config;
                 let uplinks = uplinks;
@@ -1066,7 +1071,7 @@ impl WorkerContext {
                             continue;
                         }
                     };
-                    uplink::run_uplink(uplinks.clone(), uplink_mac_tables.clone(), &mut endpoint);
+                    uplink::run_uplink(uplinks.clone(), uplink_mac_tables.clone(), uplink_serial_window.clone(), &mut endpoint);
                     println!("Lost connection {}", link_from_config);
                     thread::sleep(Duration::from_secs(1));
                     println!("Reconnecting after 10 seconds..");

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use bson::{deserialize_from_slice, serialize_to_vec};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use crate::{endpoint, ethertable, uplink};
+use crate::{endpoint, ethertable, serialwindow, uplink};
 
 // An uplink is a connection to another endpoint
 // We may have multiple uplinks to the same endpoint
@@ -297,7 +297,7 @@ pub fn forward_packet(packet: &UplinkPacket, uplinks: &Arc<Mutex<Vec<Arc<Mutex<u
     }
 }
 
-pub fn run_uplink(uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, uplink_mac_tables: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<ethertable::MacTable>>>>>, endpoint: &mut endpoint::Endpoint) {
+pub fn run_uplink(uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, uplink_mac_tables: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<ethertable::MacTable>>>>>, uplink_serial_window: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<serialwindow::SerialWindow<u32,128>>>>>>, endpoint: &mut endpoint::Endpoint) {
     println!("Run uplink");
     let current_uplink = Arc::new(Mutex::new(uplink::Uplink::new(endpoint.connection.try_clone().unwrap(), endpoint.endpoint_security.encryption_out.clone(), endpoint.endpoint_security.master_pubkey_sha256.clone())));
     {
@@ -368,9 +368,32 @@ pub fn run_uplink(uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, uplink_m
             },
             PACKET => {
                 match deserialize_from_slice::<UplinkPacket>(&buf[2..]) {
-                    Ok(_msg) => {
+                    Ok(mut _msg) => {
+                        let master_pubkey = endpoint.endpoint_security.master_pubkey_sha256.clone();
+                        let accept_it = {
+                            let mut uplink_serial_window = uplink_serial_window.lock().unwrap();
+                            let uplink_serial_window = if (uplink_serial_window.contains_key(&_msg.source)) {
+                                uplink_serial_window.get(&_msg.source).unwrap().clone()
+                            } else {
+                                let new_serial_window: Arc<Mutex<serialwindow::SerialWindow<u32,128>>> = Arc::new(Mutex::new(serialwindow::SerialWindow::new(0u32)));
+                                uplink_serial_window.insert(_msg.source.clone(), new_serial_window.clone());
+                                new_serial_window
+                            };
+                            let mut uplink_serial_window = uplink_serial_window.lock().unwrap();
+                            if !uplink_serial_window.observed(_msg.serial) {
+                                uplink_serial_window.observe(_msg.serial);
+                                true
+                            } else {
+                                false
+                            }
+                        };
+                        _msg.trail.push(master_pubkey);
                         // For now, don't implement actually doing anything
-                        println!("Received UplinkPacket: {:?}", _msg);
+                        if (accept_it) {
+                            println!("Received UplinkPacket: {:?}", _msg);
+                        } else {
+                            println!("Dropped UplinkPacket: {:?}", _msg);
+                        }
                     },
                     Err(_) => {
                         println!("Failed to deserialize UplinkPacket message");
