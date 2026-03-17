@@ -1,6 +1,106 @@
+use crate::serialwindow;
 
 pub struct SerialWindow<T, const W: usize> {
     pub serials: [T; W]
+}
+
+pub trait DivByU8 {
+    fn div_by_u8(self, other: u8) -> Self;
+}
+
+macro_rules! simple_div_by_u8_impl {
+    ($int_type: ident) => {
+        impl DivByU8 for $int_type {
+            fn div_by_u8(self, other: u8) -> $int_type {
+                self / other as $int_type
+            }
+        }
+    };
+}
+
+simple_div_by_u8_impl!(u8);
+simple_div_by_u8_impl!(u16);
+simple_div_by_u8_impl!(u32);
+simple_div_by_u8_impl!(u64);
+simple_div_by_u8_impl!(u128);
+
+impl DivByU8 for i8 {
+    fn div_by_u8(self, other: u8) -> i8 {
+        if other < 128 {
+            self / other as i8
+        } else if self != -128i8 {
+            0
+        } else {
+            -1
+        }
+    }
+}
+
+macro_rules! signed_div_by_u8_impl {
+    ($int_type: ident) => {
+        impl DivByU8 for $int_type {
+            fn div_by_u8(self, other: u8) -> $int_type {
+                let o = other as $int_type;
+                if (self >= (0 as $int_type)) {
+                    self / o
+                } else if other != 1 {
+                    let temp = (0 as $int_type) - (self + (1 as $int_type));
+                    let pass1 = temp / o;
+                    let rem = (temp % o) + (1 as $int_type);
+                    let pass2 = rem / o;
+                    (0 as $int_type) - pass1 - pass2
+                } else {
+                    self
+                }
+            }
+        }
+    };
+}
+
+signed_div_by_u8_impl!(i16);
+signed_div_by_u8_impl!(i32);
+signed_div_by_u8_impl!(i64);
+signed_div_by_u8_impl!(i128);
+
+fn assert_div<T: DivByU8 + std::cmp::PartialEq>(a: T, b: u8, expect: T) {
+    let c = a.div_by_u8(b);
+    assert!(c == expect);
+}
+
+#[test]
+fn test_divs() {
+    assert_div(-7i16, 1, -7i16);
+    assert_div(-3i16, 1, -3i16);
+    assert_div(-2i16, 1, -2i16);
+    assert_div(-1i16, 1, -1i16);
+    assert_div(1i16, 1, 1i16);
+    assert_div(2i16, 1, 2i16);
+    assert_div(3i16, 1, 3i16);
+    assert_div(7i16, 1, 7i16);
+    assert_div(-7i16, 2, -3i16);
+    assert_div(-3i16, 2, -1i16);
+    assert_div(-2i16, 2, -1i16);
+    assert_div(-1i16, 2, 0i16);
+    assert_div(1i16, 2, 0i16);
+    assert_div(2i16, 2, 1i16);
+    assert_div(3i16, 2, 1i16);
+    assert_div(7i16, 2, 3i16);
+    assert_div(-7i16, 3, -2i16);
+    assert_div(-3i16, 3, -1i16);
+    assert_div(-2i16, 3, 0i16);
+    assert_div(-1i16, 3, 0i16);
+    assert_div(1i16, 3, 0i16);
+    assert_div(2i16, 3, 0i16);
+    assert_div(3i16, 3, 1i16);
+    assert_div(7i16, 3, 2i16);
+    assert_div(-7i16, 7, -1i16);
+    assert_div(-3i16, 7, 0i16);
+    assert_div(-2i16, 7, 0i16);
+    assert_div(-1i16, 7, 0i16);
+    assert_div(1i16, 7, 0i16);
+    assert_div(2i16, 7, 0i16);
+    assert_div(3i16, 7, 0i16);
+    assert_div(7i16, 7, 1i16);
 }
 
 pub trait IntMinMaxValue {
@@ -53,12 +153,12 @@ zero_value_impl!(i32);
 zero_value_impl!(i64);
 zero_value_impl!(i128);
 
-impl<T: std::marker::Copy + std::cmp::PartialOrd + num_traits::ops::wrapping::WrappingSub + IntMinMaxValue + std::ops::Div<u8, Output = T> + ZeroValue, const W: usize> SerialWindow<T, W> {
+impl<T: std::marker::Copy + std::cmp::PartialOrd + num_traits::ops::wrapping::WrappingSub + IntMinMaxValue + DivByU8 + ZeroValue, const W: usize> SerialWindow<T, W> {
     pub fn new(init_value: T) -> Self {
         Self { serials: [init_value; W] }
     }
     pub fn observe(&mut self, value: T) {
-        let half_max = T::MAX / 2;
+        let half_max = T::MAX.div_by_u8(2u8);
         let max_value = {
             let diff = value.wrapping_sub(&self.serials[W - 1]);
             let diff2 = self.serials[W - 1].wrapping_sub(&value);
@@ -93,7 +193,7 @@ impl<T: std::marker::Copy + std::cmp::PartialOrd + num_traits::ops::wrapping::Wr
         }
     }
     pub fn observed(&self, value: T) -> bool {
-        let half_max = T::MAX / 2;
+        let half_max = T::MAX.div_by_u8(2u8);
         let mut base_value = value.wrapping_sub(&half_max);
         for i in 0..W {
             let s = self.serials[W - i - 1];
