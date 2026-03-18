@@ -153,10 +153,44 @@ zero_value_impl!(i32);
 zero_value_impl!(i64);
 zero_value_impl!(i128);
 
-impl<T: std::marker::Copy + std::cmp::PartialOrd + num_traits::ops::wrapping::WrappingSub + IntMinMaxValue + DivByU8 + ZeroValue, const W: usize> SerialWindow<T, W> {
+pub trait OneValue {
+    fn one_value() -> Self;
+}
+
+macro_rules! one_value_impl {
+    ($int_type: ident) => {
+        impl OneValue for $int_type {
+            fn one_value() -> $int_type {
+                1 as $int_type
+            }
+        }
+    };
+}
+
+one_value_impl!(u8);
+one_value_impl!(u16);
+one_value_impl!(u32);
+one_value_impl!(u64);
+one_value_impl!(u128);
+one_value_impl!(i8);
+one_value_impl!(i16);
+one_value_impl!(i32);
+one_value_impl!(i64);
+one_value_impl!(i128);
+
+impl<T: std::marker::Copy + std::cmp::PartialOrd + num_traits::ops::wrapping::WrappingSub + IntMinMaxValue + DivByU8 + ZeroValue + OneValue, const W: usize> SerialWindow<T, W> {
     pub fn new(init_value: T) -> Self {
         Self { serials: [init_value; W] }
     }
+    pub fn reset(&mut self, value: T) {
+        let mut v = value;
+        let mut one = T::one_value();
+        for i in 0..W {
+            self.serials[W - i - 1] = v;
+            v = v.wrapping_sub(&one);
+        }
+    }
+
     pub fn observe(&mut self, value: T) {
         let half_max = T::MAX.div_by_u8(2u8);
         let max_value = {

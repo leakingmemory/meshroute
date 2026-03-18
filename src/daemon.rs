@@ -4,6 +4,7 @@ use std::io::{pipe, PipeReader, PipeWriter, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
@@ -620,7 +621,7 @@ pub struct EthernetHandlerCtx {
     pub uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>,
     pub uplink_mactables: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<ethertable::MacTable>>>>>,
     pub masterkey_hash: Vec<u8>,
-    pub serial: u32
+    pub serial: Arc<AtomicU32>
 }
 
 impl EthernetHandlerCtx {
@@ -632,7 +633,7 @@ impl EthernetHandlerCtx {
             uplinks,
             uplink_mactables,
             masterkey_hash,
-            serial: 0
+            serial: Arc::new(AtomicU32::new(0))
         }
     }
 }
@@ -670,15 +671,17 @@ pub fn handle_ethernet_frame(ctx: &mut EthernetHandlerCtx) -> Result<(),()> {
                 Ok(_) => {},
                 Err(_) => return Err(())
             }
-            ctx.serial = ctx.serial.wrapping_add(1);
-            let fwd_packet: uplink::UplinkPacket = uplink::UplinkPacket {
-                source: ctx.masterkey_hash.clone(),
-                trail: Vec::new(),
-                destination: uplink_addr,
-                payload: data,
-                serial: ctx.serial
-            };
-            uplink::forward_packet(&fwd_packet, &ctx.uplinks);
+            {
+                let serial = ctx.serial.fetch_add(1, Ordering::SeqCst) + 1;
+                let fwd_packet: uplink::UplinkPacket = uplink::UplinkPacket {
+                    source: ctx.masterkey_hash.clone(),
+                    trail: Vec::new(),
+                    destination: uplink_addr,
+                    payload: data,
+                    serial: serial
+                };
+                uplink::forward_packet(&fwd_packet, &ctx.uplinks);
+            }
             Ok(())
         },
         Err(_) => {
@@ -873,6 +876,7 @@ impl WorkerContext {
                 let uplinks = uplinks.clone();
                 let uplink_mac_tables = uplink_mac_tables.clone();
                 let uplink_serial_window = uplink_serial_window.clone();
+                let serial = handlerctx.serial.clone();
                 let self_name = self.name.clone();
                 let config_filename = self.config_filename.clone();
                 let restart_me_writer = self.restart_me_writer.try_clone().unwrap();
@@ -890,6 +894,7 @@ impl WorkerContext {
                         let uplinks = uplinks.clone();
                         let uplink_mac_tables = uplink_mac_tables.clone();
                         let uplink_serial_window = uplink_serial_window.clone();
+                        let serial = serial.clone();
                         client_threads.retain(move |thread| {
                             !thread.is_finished()
                         });
@@ -995,7 +1000,7 @@ impl WorkerContext {
                                         if let Some(endpoint_name) = &endpoint.name {
                                             let endpoint_name = endpoint_name.clone();
                                             println!("Uplink accepted for {}", endpoint_name);
-                                            uplink::run_uplink(uplinks, uplink_mac_tables, uplink_serial_window, &mut endpoint);
+                                            uplink::run_uplink(uplinks, uplink_mac_tables, uplink_serial_window, &mut endpoint, serial);
                                             println!("Uplink closed for {}", endpoint_name);
                                         } else {
                                             println!("Uplink rejected");
@@ -1034,6 +1039,7 @@ impl WorkerContext {
             let uplinks = uplinks.clone();
             let uplink_mac_tables = uplink_mac_tables.clone();
             let uplink_serial_window = uplink_serial_window.clone();
+            let serial = handlerctx.serial.clone();
             thread::spawn(move || {
                 let config = config;
                 let uplinks = uplinks;
@@ -1071,7 +1077,7 @@ impl WorkerContext {
                             continue;
                         }
                     };
-                    uplink::run_uplink(uplinks.clone(), uplink_mac_tables.clone(), uplink_serial_window.clone(), &mut endpoint);
+                    uplink::run_uplink(uplinks.clone(), uplink_mac_tables.clone(), uplink_serial_window.clone(), &mut endpoint, serial.clone());
                     println!("Lost connection {}", link_from_config);
                     thread::sleep(Duration::from_secs(1));
                     println!("Reconnecting after 10 seconds..");

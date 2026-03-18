@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::net::TcpStream;
 use serde::{Deserialize, Serialize};
@@ -89,6 +90,33 @@ impl Uplink {
             Err(_) => Err(())
         }
     }
+
+    pub fn send_reset_serial(&mut self, serial: u32) -> Result<(), ()> {
+        let msg = ResetSerial { serial };
+        let mut msg_body = match serialize_to_vec(&msg) {
+            Ok(b) => b,
+            Err(_) => return Err(())
+        };
+        let mut buf = Vec::with_capacity(msg_body.len() + 2);
+        let msg_type = UplinkMsgType::RESET_SERIAL as u16;
+        buf.extend_from_slice(&msg_type.to_be_bytes());
+        buf.append(&mut msg_body);
+        
+        match self.encryption_out.encrypt(&mut buf) {
+            Ok(_) => {},
+            Err(_) => return Err(())
+        }
+        
+        let mut final_buf = Vec::with_capacity(buf.len() + 4);
+        let msg_len = buf.len() as u32;
+        final_buf.extend_from_slice(&msg_len.to_be_bytes());
+        final_buf.extend_from_slice(&buf);
+        
+        match self.connection.write_all(&final_buf) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(())
+        }
+    }
 }
 
 #[repr(u16)]
@@ -96,12 +124,18 @@ impl Uplink {
 #[allow(non_camel_case_types)]
 enum UplinkMsgType {
     MY_CONNECTIONS = 0,
-    PACKET = 1
+    PACKET = 1,
+    RESET_SERIAL = 2
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MyConnections {
     pub key_hashes: Vec<Vec<u8>>
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ResetSerial {
+    pub serial: u32
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -297,7 +331,7 @@ pub fn forward_packet(packet: &UplinkPacket, uplinks: &Arc<Mutex<Vec<Arc<Mutex<u
     }
 }
 
-pub fn run_uplink(uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, uplink_mac_tables: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<ethertable::MacTable>>>>>, uplink_serial_window: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<serialwindow::SerialWindow<u32,128>>>>>>, endpoint: &mut endpoint::Endpoint) {
+pub fn run_uplink(uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, uplink_mac_tables: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<ethertable::MacTable>>>>>, uplink_serial_window: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<serialwindow::SerialWindow<u32,128>>>>>>, endpoint: &mut endpoint::Endpoint, serial: Arc<AtomicU32>) {
     println!("Run uplink");
     let current_uplink = Arc::new(Mutex::new(uplink::Uplink::new(endpoint.connection.try_clone().unwrap(), endpoint.endpoint_security.encryption_out.clone(), endpoint.endpoint_security.master_pubkey_sha256.clone())));
     {
@@ -312,6 +346,13 @@ pub fn run_uplink(uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, uplink_m
     {
         let mut uplinks_lock = uplinks.lock().unwrap();
         uplinks_lock.push(current_uplink.clone());
+    }
+    {
+        let mut uplink_lock = current_uplink.lock().unwrap();
+        let current_serial = serial.load(Ordering::SeqCst);
+        if let Err(_) = uplink_lock.send_reset_serial(current_serial) {
+            println!("Failed to send ResetSerial message");
+        }
     }
     uplink_change(&uplinks);
     let mut len_buf = [0u8; 4];
@@ -349,6 +390,7 @@ pub fn run_uplink(uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, uplink_m
 
         const MY_CONNECTIONS: u16 = UplinkMsgType::MY_CONNECTIONS as u16;
         const PACKET: u16 = UplinkMsgType::PACKET as u16;
+        const RESET_SERIAL: u16 = UplinkMsgType::RESET_SERIAL as u16;
 
         match msg_type_u16 {
             MY_CONNECTIONS => {
@@ -372,10 +414,10 @@ pub fn run_uplink(uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, uplink_m
                         let master_pubkey = endpoint.endpoint_security.master_pubkey_sha256.clone();
                         let accept_it = {
                             let mut uplink_serial_window = uplink_serial_window.lock().unwrap();
-                            let uplink_serial_window = if (uplink_serial_window.contains_key(&_msg.source)) {
+                            let uplink_serial_window = if uplink_serial_window.contains_key(&_msg.source) {
                                 uplink_serial_window.get(&_msg.source).unwrap().clone()
                             } else {
-                                let new_serial_window: Arc<Mutex<serialwindow::SerialWindow<u32,128>>> = Arc::new(Mutex::new(serialwindow::SerialWindow::new(0u32)));
+                                let new_serial_window: Arc<Mutex<serialwindow::SerialWindow<u32, 128>>> = Arc::new(Mutex::new(serialwindow::SerialWindow::new(0u32)));
                                 uplink_serial_window.insert(_msg.source.clone(), new_serial_window.clone());
                                 new_serial_window
                             };
@@ -389,7 +431,7 @@ pub fn run_uplink(uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, uplink_m
                         };
                         _msg.trail.push(master_pubkey);
                         // For now, don't implement actually doing anything
-                        if (accept_it) {
+                        if accept_it {
                             println!("Received UplinkPacket: {:?}", _msg);
                         } else {
                             println!("Dropped UplinkPacket: {:?}", _msg);
@@ -397,6 +439,27 @@ pub fn run_uplink(uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, uplink_m
                     },
                     Err(_) => {
                         println!("Failed to deserialize UplinkPacket message");
+                    }
+                }
+            },
+            RESET_SERIAL => {
+                match deserialize_from_slice::<ResetSerial>(&buf[2..]) {
+                    Ok(msg) => {
+                        println!("Received ResetSerial from {}: {:?}", endpoint.endpoint_security.master_pubkey_sha256.iter().map(|b| format!("{:02x}", b)).collect::<String>(), msg);
+                        {
+                            let mut uplink_serial_window = uplink_serial_window.lock().unwrap();
+                            let remote_pubkey_hash = endpoint.endpoint_security.master_pubkey_sha256.clone();
+                            if uplink_serial_window.contains_key(&remote_pubkey_hash) {
+                                let mut sw = uplink_serial_window.get(&remote_pubkey_hash).unwrap().lock().unwrap();
+                                sw.reset(msg.serial);
+                            } else {
+                                let new_serial_window: Arc<Mutex<serialwindow::SerialWindow<u32, 128>>> = Arc::new(Mutex::new(serialwindow::SerialWindow::new(msg.serial)));
+                                uplink_serial_window.insert(remote_pubkey_hash, new_serial_window);
+                            }
+                        }
+                    },
+                    Err(_) => {
+                        println!("Failed to deserialize ResetSerial message");
                     }
                 }
             },
