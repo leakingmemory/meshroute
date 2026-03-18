@@ -40,6 +40,31 @@ impl FileDes {
             Err(r)
         }
     }
+    pub fn write(&self, buf: &[u8]) -> Result<usize, libc::ssize_t> {
+        let w = unsafe { libc::write(self.fd, buf.as_ptr() as *const libc::c_void, buf.len() as libc::size_t) };
+        if w >= 0 {
+            let n = w as usize;
+            Ok(n)
+        } else {
+            Err(w)
+        }
+    }
+    pub fn write_all(&self, buf: &[u8]) -> Result<(),()> {
+        let mut off: usize = 0;
+        while off < buf.len() {
+            let buf = &buf[off..];
+            let res = match self.write(buf) {
+                Ok(s) => {
+                    if s == 0 {
+                        return Err(());
+                    }
+                    off = off + s
+                },
+                Err(_) => return Err(())
+            };
+        }
+        Ok(())
+    }
 }
 
 impl Clone for FileDes {

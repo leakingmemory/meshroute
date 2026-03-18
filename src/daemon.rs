@@ -861,7 +861,8 @@ impl WorkerContext {
                 println!("Failed to clone event writer");
                 return 1;
             }
-        }, uplinks.clone(), uplink_mac_tables.clone(), masterkey_hash);
+        }, uplinks.clone(), uplink_mac_tables.clone(), masterkey_hash.clone());
+        let tap_dev = Arc::new(Mutex::new(self.tap_dev.clone()));
         if let Some(listen_addr) = listen_addr {
             println!("Listening on tcp {}", listen_addr);
             let listen_socket = match TcpListener::bind(listen_addr.as_str()) {
@@ -873,6 +874,8 @@ impl WorkerContext {
             };
             if let Some(listen_socket) = listen_socket {
                 let config = self.config.clone();
+                let tap_dev = tap_dev.clone();
+                let masterkey_hash = masterkey_hash.clone();
                 let uplinks = uplinks.clone();
                 let uplink_mac_tables = uplink_mac_tables.clone();
                 let uplink_serial_window = uplink_serial_window.clone();
@@ -891,6 +894,8 @@ impl WorkerContext {
                             }
                         };
                         let config = config.clone();
+                        let tap_dev = tap_dev.clone();
+                        let masterkey_hash = masterkey_hash.clone();
                         let uplinks = uplinks.clone();
                         let uplink_mac_tables = uplink_mac_tables.clone();
                         let uplink_serial_window = uplink_serial_window.clone();
@@ -1000,7 +1005,7 @@ impl WorkerContext {
                                         if let Some(endpoint_name) = &endpoint.name {
                                             let endpoint_name = endpoint_name.clone();
                                             println!("Uplink accepted for {}", endpoint_name);
-                                            uplink::run_uplink(uplinks, uplink_mac_tables, uplink_serial_window, &mut endpoint, serial);
+                                            uplink::run_uplink(tap_dev, masterkey_hash, uplinks, uplink_mac_tables, uplink_serial_window, &mut endpoint, serial);
                                             println!("Uplink closed for {}", endpoint_name);
                                         } else {
                                             println!("Uplink rejected");
@@ -1036,6 +1041,8 @@ impl WorkerContext {
         }
         for link_from_config in links_from_config {
             let config = self.config.clone();
+            let tap_dev = tap_dev.clone();
+            let masterkey_hash = masterkey_hash.clone();
             let uplinks = uplinks.clone();
             let uplink_mac_tables = uplink_mac_tables.clone();
             let uplink_serial_window = uplink_serial_window.clone();
@@ -1077,7 +1084,7 @@ impl WorkerContext {
                             continue;
                         }
                     };
-                    uplink::run_uplink(uplinks.clone(), uplink_mac_tables.clone(), uplink_serial_window.clone(), &mut endpoint, serial.clone());
+                    uplink::run_uplink(tap_dev.clone(), masterkey_hash.clone(), uplinks.clone(), uplink_mac_tables.clone(), uplink_serial_window.clone(), &mut endpoint, serial.clone());
                     println!("Lost connection {}", link_from_config);
                     thread::sleep(Duration::from_secs(1));
                     println!("Reconnecting after 10 seconds..");
