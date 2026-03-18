@@ -442,6 +442,9 @@ pub fn run_uplink(tap_dev: Arc<Mutex<filedes::FileDes>>, my_pubkey_hash: Vec<u8>
                                     }
                                 };
                             }
+                            if _msg.destination.is_empty() || _msg.destination != my_pubkey_hash {
+                                forward_packet(&_msg, &uplinks);
+                            }
                         } else {
                             println!("Dropped UplinkPacket: {:?}", _msg);
                         }
