@@ -12,10 +12,10 @@ impl ForkedWorker {
         println!("Forking");
         let pid = unsafe { libc::fork() };
         println!("Fork returned {}", pid);
-        if (pid < 0) {
+        if pid < 0 {
             return Err(());
         }
-        if (pid == 0) {
+        if pid == 0 {
             println!("Run func");
             let ret = func();
             println!("Done child");

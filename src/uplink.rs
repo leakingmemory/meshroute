@@ -200,7 +200,7 @@ fn update_all_uplinks(uplinks: &Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>) -> 
         if let Some(reportable) = reportable_map.get(&uplink.remote_endpoint_hash) {
             let mut changed = reportable.len() != uplink.reported_endpoints.len();
             if !changed {
-                let mut reported_set: HashSet<&Vec<u8>> = uplink.reported_endpoints.iter().collect();
+                let reported_set: HashSet<&Vec<u8>> = uplink.reported_endpoints.iter().collect();
                 for r in reportable {
                     if !reported_set.contains(r) {
                         changed = true;
@@ -434,7 +434,7 @@ pub fn run_uplink(tap_dev: Arc<Mutex<filedes::FileDes>>, my_pubkey_hash: Vec<u8>
                         if accept_it {
                             if _msg.destination.is_empty() || _msg.destination == my_pubkey_hash {
                                 println!("UplinkPacket for me: {:?}", _msg);
-                                let mut tap_dev = tap_dev.lock().unwrap();
+                                let tap_dev = tap_dev.lock().unwrap();
                                 match tap_dev.write_all(_msg.payload.as_slice()) {
                                     Ok(_) => {},
                                     Err(_) => {

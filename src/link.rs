@@ -2,7 +2,7 @@ use std::process::ExitCode;
 use bson::deserialize_from_slice;
 use crate::control::connect_control;
 use crate::{controlproto, opts};
-use crate::controlproto::{Command, ControlMsgType, LinksList, PairingRequestList};
+use crate::controlproto::{Command, ControlMsgType, LinksList};
 
 pub fn run_list_links(opts: &opts::Opts, name: &str) -> ExitCode {
     let mut control = match connect_control(opts, name) {
@@ -63,7 +63,7 @@ pub fn run_addrem_link(opts: &opts::Opts, name: &str, cmd: controlproto::Command
             return ExitCode::from(1)
         }
     };
-    match control.receive(|hdr, buf| {
+    match control.receive(|hdr, _buf| {
         if matches!(hdr.msg_type, ControlMsgType::GENERIC_OK) {
             Ok(())
         } else {

@@ -44,7 +44,7 @@ pub fn run_pair(opts: &opts::Opts, name: &str, addr: &str) -> ExitCode {
 
 pub fn short_key_hash(hash: &[u8]) -> String {
     let mut str: Option<String> = None;
-    if (hash.len() > 0) {
+    if hash.len() > 0  {
         str = Some(format!("{:X}", hash[0]));
         if let Some(ref mut str) = str && hash.len() > 1 {
             str.push_str(" ...");

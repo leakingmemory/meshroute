@@ -1,4 +1,3 @@
-use crate::serialwindow;
 
 pub struct SerialWindow<T, const W: usize> {
     pub serials: [T; W]
@@ -184,7 +183,7 @@ impl<T: std::marker::Copy + std::cmp::PartialOrd + num_traits::ops::wrapping::Wr
     }
     pub fn reset(&mut self, value: T) {
         let mut v = value;
-        let mut one = T::one_value();
+        let one = T::one_value();
         for i in 0..W {
             self.serials[W - i - 1] = v;
             v = v.wrapping_sub(&one);
@@ -201,7 +200,7 @@ impl<T: std::marker::Copy + std::cmp::PartialOrd + num_traits::ops::wrapping::Wr
             }
             if diff >= T::zero_value() && diff < half_max {
                 value
-            } else if (diff2 >= T::zero_value() && diff2 < half_max) {
+            } else if diff2 >= T::zero_value() && diff2 < half_max  {
                 self.serials[W - 1]
             } else {
                 return;

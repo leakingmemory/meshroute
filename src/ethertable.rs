@@ -1,4 +1,3 @@
-use std::sync::{Arc, Mutex};
 
 #[derive(Copy, Clone)]
 pub enum MacEntryLocation {
@@ -163,16 +162,16 @@ impl HashMacAddr for &[u8; 6] {
             }
             p = u16::from_le_bytes(vp);
         }
-        for i in 0..32 {
+        for _i in 0..32 {
             let pbit = (p & 1) as u8;
             p = p >> 1;
             let ubit = (u & 1) as u8;
             u = u >> 1;
             let xbit = pbit ^ ubit;
-            if (pbit != 0) {
+            if pbit != 0  {
                 p |= 0x8000;
             }
-            if (xbit != 0) {
+            if xbit != 0  {
                 p ^= 0x4142;
             }
         }

@@ -53,7 +53,7 @@ impl FileDes {
         let mut off: usize = 0;
         while off < buf.len() {
             let buf = &buf[off..];
-            let res = match self.write(buf) {
+            let _res = match self.write(buf) {
                 Ok(s) => {
                     if s == 0 {
                         return Err(());

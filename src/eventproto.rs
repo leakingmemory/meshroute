@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 
 #[repr(u16)]
 #[derive(Clone, Copy)]
@@ -23,7 +22,7 @@ impl EventHeader {
         pbuf.copy_from_slice(&buf[4..6]);
         let event_type = u16::from_be_bytes(pbuf);
         const HOST_PACKET: u16 = EventType::HostPacket as u16;
-        let event_type = match event_type {
+        let _event_type = match event_type {
             HOST_PACKET => EventType::HostPacket,
             _ => return Err(())
         };

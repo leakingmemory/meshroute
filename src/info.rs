@@ -2,8 +2,6 @@ use std::process::ExitCode;
 use bson::deserialize_from_slice;
 use crate::control::connect_control;
 use crate::{controlproto, opts};
-use crate::controlproto::PairResult;
-use crate::pair::short_key_hash;
 
 pub fn run_info(opts: &opts::Opts, name: &str) -> ExitCode {
     let mut control = match connect_control(opts, name) {

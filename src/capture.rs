@@ -16,7 +16,7 @@ pub fn run_capture(opts: &opts::Opts, name: &str) -> ExitCode {
         }
     };
     loop {
-        match control.receive(|hdr, buf| {
+        match control.receive(|_hdr, buf| {
             let frame = match deserialize_from_slice::<ethernet::EthernetFrame>(buf) {
                 Ok(f) => f,
                 Err(_) => {

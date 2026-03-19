@@ -361,7 +361,7 @@ fn recv_init(connection: &mut TcpStream, recv_pkeys: &RecvProtoAndKeys, config: 
         let block_of_material_siglen = u64::from_be_bytes(u64buf) as usize;
         block_of_material_buf.resize(block_of_material_len + block_of_material_siglen, 0);
         match connection.read_exact(block_of_material_buf.as_mut_slice()) {
-            Ok(s) => {},
+            Ok(_) => {},
             Err(_) => {
                 println!("External connection read error, closing");
                 return Err(())

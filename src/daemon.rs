@@ -10,7 +10,6 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 use bson::{deserialize_from_slice, serialize_to_vec};
-use libc::sleep;
 use rsa::signature::{SignatureEncoding, Signer, Verifier};
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use rsa::pkcs1::{DecodeRsaPublicKey, EncodeRsaPublicKey};
@@ -21,7 +20,7 @@ use serde::Serialize;
 use sha2::Digest;
 use crate::{config, controlproto, endpoint, ethernet, ethertable, eventproto, filedes, handshake, keyex, opts, serialwindow, uplink};
 use crate::config::{PairedEndpoint, PairingRequest};
-use crate::controlproto::{Command, PairResult};
+use crate::controlproto::Command;
 use crate::controlproto::ControlMsgType::HOST_PACKET;
 use crate::endpoint::{EndpointMessage, PairingResponse};
 use crate::ethernet::EthernetAddress;
@@ -883,7 +882,7 @@ impl WorkerContext {
                 let self_name = self.name.clone();
                 let config_filename = self.config_filename.clone();
                 let restart_me_writer = self.restart_me_writer.try_clone().unwrap();
-                let network_listener = thread::spawn(move || {
+                let _network_listener = thread::spawn(move || {
                     let mut client_threads: Vec<thread::JoinHandle<()>> = Vec::new();
                     for connection in listen_socket.incoming() {
                         let mut connection = match connection {
@@ -1139,7 +1138,7 @@ impl WorkerContextThreadSafe {
         if pid < 0 {
             println!("Failed to fork worker process");
             return;
-        } else if (pid == 0) {
+        } else if pid == 0  {
             println!("Spawned as child process");
             ctx.run_worker();
             std::process::exit(0);
@@ -1147,7 +1146,7 @@ impl WorkerContextThreadSafe {
         println!("Network worker process spawned {}", pid);
         let forkedworker = ForkedWorker::new_from_pid(pid);
         let mut fw = self.forkedworker.lock().unwrap();
-        if (fw.is_none()) {
+        if fw.is_none()  {
             fw.replace(forkedworker);
         } else {
             println!("Stopping worker due to simultaneous start");
@@ -1183,10 +1182,10 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
             }
         };
         let pid = unsafe { libc::fork() };
-        if (pid < 0) {
+        if pid < 0  {
             println!("Failed to fork daemon process");
             return run_daemon_w(&mut restart_me_writer, opts, name)
-        } else if (pid == 0) {
+        } else if pid == 0  {
             println!("Spawned as child process");
             return run_daemon_w(&mut restart_me_writer, opts, name);
         } else {
@@ -1200,7 +1199,7 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
                     return ExitCode::from(1);
                 }
             };
-            if (rd == 0) {
+            if rd == 0  {
                 println!("No restart requested");
                 unsafe { libc::kill(pid, libc::SIGTERM); }
                 unsafe { libc::waitpid(pid, std::ptr::null_mut(), 0); }
