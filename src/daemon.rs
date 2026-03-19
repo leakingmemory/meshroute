@@ -24,7 +24,6 @@ use crate::controlproto::Command;
 use crate::controlproto::ControlMsgType::HostPacket;
 use crate::endpoint::{EndpointMessage, PairingResponse};
 use crate::ethernet::EthernetAddress;
-use crate::ethertable::MacEntryLocation::LOCAL;
 use crate::eventproto::EventType;
 use crate::forkedworker::ForkedWorker;
 
@@ -639,9 +638,7 @@ impl EthernetHandlerCtx {
 
 pub fn handle_ethernet_frame(ctx: &mut EthernetHandlerCtx) -> Result<(),()> {
     if (&ctx.frame.src_mac).is_individual() {
-        ctx.mac_table.borrow_entry(&ctx.frame.src_mac, |entry| {
-            entry.location = LOCAL;
-        });
+        ctx.mac_table.add_entry_if_not_exists(&ctx.frame.src_mac);
     }
     let mut uplink_addr: Vec<u8> = Vec::new();
     {

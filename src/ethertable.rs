@@ -1,14 +1,7 @@
 
 #[derive(Copy, Clone)]
-pub enum MacEntryLocation {
-    UNKNOWN,
-    LOCAL,
-    NODE(u32)
-}
-#[derive(Copy, Clone)]
 pub struct MacEntry {
-    pub addr: [u8; 6],
-    pub location: MacEntryLocation
+    pub addr: [u8; 6]
 }
 
 trait HashMacAddr {
@@ -80,8 +73,7 @@ impl MacTable {
             None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None,
         ] }
     }
-    pub fn borrow_entry<T,F>(&mut self, addr: &[u8; 6], scope: F) -> T
-        where F: FnOnce(&mut MacEntry) -> T {
+    pub fn add_entry_if_not_exists(&mut self, addr: &[u8; 6]) {
         let mac_hash = addr.hash_value();
         println!("hash: {:x}", mac_hash);
         let idx1 = (mac_hash >> 8) as usize;
@@ -102,12 +94,10 @@ impl MacTable {
         };
         for entry in level3.entries.iter_mut() {
             if entry.addr == *addr {
-                return scope(entry);
+                return;
             }
         }
-        level3.entries.push(MacEntry { addr: *addr, location: MacEntryLocation::UNKNOWN });
-        let idx3 = level3.entries.len()-1;
-        scope(&mut level3.entries[idx3])
+        level3.entries.push(MacEntry { addr: *addr });
     }
     pub fn remove_entry_if_exists(&mut self, addr: &[u8; 6]) {
         let mac_hash = addr.hash_value();

@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use bson::{deserialize_from_slice, serialize_to_vec};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use crate::{endpoint, ethertable, filedes, serialwindow, uplink};
+use crate::{endpoint, ethernet, ethertable, filedes, serialwindow, uplink};
+use crate::ethernet::EthernetAddress;
 
 // An uplink is a connection to another endpoint
 // We may have multiple uplinks to the same endpoint
@@ -430,7 +431,46 @@ pub fn run_uplink(tap_dev: Arc<Mutex<filedes::FileDes>>, my_pubkey_hash: Vec<u8>
                         };
                         _msg.trail.push(master_pubkey);
                         // For now, don't implement actually doing anything
-                        if accept_it {
+                        let frame: Option<ethernet::EthernetFrame> = if accept_it {
+                            match deserialize_from_slice(_msg.payload.as_slice()) {
+                                Ok(f) => Some(f),
+                                Err(_) => {
+                                    println!("Unable to decode frame from uplink");
+                                    None
+                                }
+                            }
+                        } else {
+                            None
+                        };
+                        if let Some(frame) = frame {
+                            if (&frame.src_mac).is_individual() {
+                                let mut mac_tables: Vec<Arc<Mutex<ethertable::MacTable>>> = Vec::new();
+                                let uplink_mac_table = {
+                                    let mut uplink_mac_tables = uplink_mac_tables.lock().unwrap();
+                                    let mut uplink_mac_table: Option<Arc<Mutex<ethertable::MacTable>>> = None;
+                                    for (key, mac_table) in uplink_mac_tables.iter() {
+                                        if _msg.source == *key {
+                                            uplink_mac_table = Some(mac_table.clone());
+                                        } else {
+                                            mac_tables.push(mac_table.clone());
+                                        }
+                                    }
+                                    match uplink_mac_table {
+                                        Some(mac_table) => mac_table,
+                                        None => {
+                                            let mac_table = Arc::new(Mutex::new(ethertable::MacTable::new()));
+                                            uplink_mac_tables.insert(_msg.source.clone(), mac_table.clone());
+                                            mac_table
+                                        }
+                                    }
+                                };
+                                for mac_table in mac_tables {
+                                    let mut mac_table = mac_table.lock().unwrap();
+                                    mac_table.remove_entry_if_exists(&frame.src_mac);
+                                }
+                                let mut uplink_mac_table = uplink_mac_table.lock().unwrap();
+                                uplink_mac_table.add_entry_if_not_exists(&frame.src_mac);
+                            }
                             if _msg.destination.is_empty() || _msg.destination == my_pubkey_hash {
                                 println!("UplinkPacket for me: {:?}", _msg);
                                 let tap_dev = tap_dev.lock().unwrap();
