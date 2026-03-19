@@ -37,17 +37,6 @@ impl Endpoint {
             name: None
         }
     }
-    pub fn try_clone(&self) -> Result<Self,()> {
-        Ok(Self {
-            connection: match self.connection.try_clone() {
-                Ok(c) => c,
-                Err(_) => return Err(())
-            },
-            endpoint_security: self.endpoint_security.clone(),
-            buf: Vec::new(),
-            name: None
-        })
-    }
     pub fn send(&mut self, endpoint_message: EndpointMessage, message_body: &[u8]) -> Result<(),()> {
         self.buf.resize(2+message_body.len(), 0);
         let msg_type = endpoint_message as u16;

@@ -61,6 +61,7 @@ signed_div_by_u8_impl!(i32);
 signed_div_by_u8_impl!(i64);
 signed_div_by_u8_impl!(i128);
 
+#[cfg(test)]
 fn assert_div<T: DivByU8 + std::cmp::PartialEq>(a: T, b: u8, expect: T) {
     let c = a.div_by_u8(b);
     assert!(c == expect);
@@ -102,30 +103,28 @@ fn test_divs() {
     assert_div(7i16, 7, 1i16);
 }
 
-pub trait IntMinMaxValue {
-    const MIN: Self;
+pub trait IntMaxValue {
     const MAX: Self;
 }
 
 macro_rules! type_const_impl {
-    ($trait_name: ident, $int_type: ident, $min_const_name: ident, $const_name: ident) => {
+    ($trait_name: ident, $int_type: ident, $const_name: ident) => {
         impl $trait_name for $int_type {
-            const $min_const_name: $int_type = $int_type::$min_const_name;
             const $const_name: $int_type = $int_type::$const_name;
         }
     };
 }
 
-type_const_impl!(IntMinMaxValue, u8, MIN, MAX);
-type_const_impl!(IntMinMaxValue, u16, MIN, MAX);
-type_const_impl!(IntMinMaxValue, u32, MIN, MAX);
-type_const_impl!(IntMinMaxValue, u64, MIN, MAX);
-type_const_impl!(IntMinMaxValue, u128, MIN, MAX);
-type_const_impl!(IntMinMaxValue, i8, MIN, MAX);
-type_const_impl!(IntMinMaxValue, i16, MIN, MAX);
-type_const_impl!(IntMinMaxValue, i32, MIN, MAX);
-type_const_impl!(IntMinMaxValue, i64, MIN, MAX);
-type_const_impl!(IntMinMaxValue, i128, MIN, MAX);
+type_const_impl!(IntMaxValue, u8, MAX);
+type_const_impl!(IntMaxValue, u16, MAX);
+type_const_impl!(IntMaxValue, u32, MAX);
+type_const_impl!(IntMaxValue, u64, MAX);
+type_const_impl!(IntMaxValue, u128, MAX);
+type_const_impl!(IntMaxValue, i8, MAX);
+type_const_impl!(IntMaxValue, i16, MAX);
+type_const_impl!(IntMaxValue, i32, MAX);
+type_const_impl!(IntMaxValue, i64, MAX);
+type_const_impl!(IntMaxValue, i128, MAX);
 
 pub trait ZeroValue {
     fn zero_value() -> Self;
@@ -177,7 +176,7 @@ one_value_impl!(i32);
 one_value_impl!(i64);
 one_value_impl!(i128);
 
-impl<T: std::marker::Copy + std::cmp::PartialOrd + num_traits::ops::wrapping::WrappingSub + IntMinMaxValue + DivByU8 + ZeroValue + OneValue, const W: usize> SerialWindow<T, W> {
+impl<T: std::marker::Copy + std::cmp::PartialOrd + num_traits::ops::wrapping::WrappingSub + IntMaxValue + DivByU8 + ZeroValue + OneValue, const W: usize> SerialWindow<T, W> {
     pub fn new(init_value: T) -> Self {
         Self { serials: [init_value; W] }
     }

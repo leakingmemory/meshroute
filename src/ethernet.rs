@@ -31,9 +31,6 @@ impl EthernetFrame {
             payload: Vec::new()
         }
     }
-    pub fn is_individual(&self) -> bool {
-        (&self.dst_mac).is_individual()
-    }
     pub fn is_multicast(&self) -> bool {
         (&self.dst_mac).is_multicast()
     }

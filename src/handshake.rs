@@ -481,7 +481,6 @@ pub fn run_server_handshake(connection: &mut TcpStream, config: &Arc<Mutex<confi
 const CLIENT_VERSION_MIN: u16 = 0;
 const CLIENT_VERSION_MAX: u16 = 0;
 const CLIENT_MINOR_VERSION_MIN: [(u16, u16); 1] = [(0u16, 0u16)];
-const CLIENT_MINOR_VERSION_MAX: [(u16, u16); 1] = [(0u16, 0u16)];
 pub fn run_client_handshake(connection: &mut TcpStream, config: &Arc<Mutex<config::Config>>) -> Result<EndpointSecurity,()> {
     let mut recv_pkeys = match recv_pubkeys(connection) {
         Ok(r) => r,

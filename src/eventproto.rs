@@ -11,9 +11,6 @@ pub struct EventHeader {
 }
 
 impl EventHeader {
-    pub fn size() -> usize {
-        6
-    }
     pub fn from_bytes(buf: &[u8; 6]) -> Result<Self,()> {
         let mut pbuf = [0u8; 4];
         pbuf.copy_from_slice(&buf[0..4]);

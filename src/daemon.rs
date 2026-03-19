@@ -1435,7 +1435,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
     }
     println!("Configured ethernet device {}", unsafe { CStr::from_ptr(ifreq.ifr_name.as_ptr() as *const libc::c_char) }.to_str().unwrap());
     let eventworker_ctx = Arc::new(Mutex::new(EventHandlerCtx::new()));
-    let eventworker_thread;
+    let _eventworker_thread;
     let ctx: WorkerContextThreadSafe;
     {
         let event_reader;
@@ -1453,7 +1453,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
             ctx.run_worker_process();
         }
         let eventworker_ctx = eventworker_ctx.clone();
-        eventworker_thread = thread::spawn(move || event_handler(event_reader, eventworker_ctx));
+        _eventworker_thread = thread::spawn(move || event_handler(event_reader, eventworker_ctx));
     }
     let mut control_clients: Vec<Option<JoinHandle<()>>> = Vec::new();
     for stream in control_listener.incoming() {

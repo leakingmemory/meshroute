@@ -318,7 +318,6 @@ pub fn forward_packet(packet: &UplinkPacket, uplinks: &Arc<Mutex<Vec<Arc<Mutex<u
                 if matches {
                     match uplink.send_packet(packet) {
                         Ok(_) => {
-                            sent = true;
                             break; // Sent successfully, don't send over other indirect links
                         },
                         Err(_) => {
