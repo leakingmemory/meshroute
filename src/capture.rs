@@ -8,7 +8,7 @@ pub fn run_capture(opts: &opts::Opts, name: &str) -> ExitCode {
         Ok(c) => c,
         Err(_) => return ExitCode::from(1)
     };
-    match control.command(controlproto::Command::CAPTURE) {
+    match control.command(controlproto::Command::Capture) {
         Ok(()) => {},
         Err(_) => {
             println!("Failed to send exit command to control socket");

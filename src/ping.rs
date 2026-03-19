@@ -8,7 +8,7 @@ pub fn run_ping(opts: &opts::Opts, name: &str) -> ExitCode {
         Err(_) => return ExitCode::from(1)
     };
     println!("{} responds with version {}.{}", control.greeting.name, control.greeting.major, control.greeting.minor);
-    match control.command(controlproto::Command::EXIT) {
+    match control.command(controlproto::Command::Exit) {
         Ok(()) => {},
         Err(_) => {
             println!("Failed to send exit command to control socket");

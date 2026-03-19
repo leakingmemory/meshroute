@@ -8,14 +8,14 @@ pub fn run_listen(opts: &opts::Opts, name: &str, listen: &str) -> ExitCode {
         Err(_) => return ExitCode::from(1)
     };
     let listen_cmd = controlproto::ListenCmd { listen: listen.to_string() };
-    match control.command_with_object(controlproto::Command::LISTEN, &listen_cmd) {
+    match control.command_with_object(controlproto::Command::Listen, &listen_cmd) {
         Ok(()) => {},
         Err(_) => {
             println!("Failed to send listen command to control socket");
             return ExitCode::from(1)
         }
     };
-    match control.command(controlproto::Command::EXIT) {
+    match control.command(controlproto::Command::Exit) {
         Ok(()) => {},
         Err(_) => {
             println!("Failed to send exit command to control socket");

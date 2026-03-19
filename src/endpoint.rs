@@ -12,10 +12,10 @@ pub struct Endpoint {
 
 #[repr(u16)]
 pub enum EndpointMessage {
-    PAIRING_REQUEST = 0,
-    PAIRING_RESPONSE = 1,
-    UPLINK = 2,
-    GENERIC_ERROR = 3,
+    PairingRequest = 0,
+    PairingResponse = 1,
+    Uplink = 2,
+    GenericError = 3,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -106,15 +106,15 @@ impl Endpoint {
         };
         let msg_type: [u8; 2] = [self.buf[0], self.buf[1]];
         let msg_type: u16 = u16::from_be_bytes(msg_type);
-        const PAIRING_REQUEST: u16 = EndpointMessage::PAIRING_REQUEST as u16;
-        const PAIRING_RESPONSE: u16 = EndpointMessage::PAIRING_RESPONSE as u16;
-        const UPLINK: u16 = EndpointMessage::UPLINK as u16;
-        const GENERIC_ERROR: u16 = EndpointMessage::GENERIC_ERROR as u16;
+        const PAIRING_REQUEST: u16 = EndpointMessage::PairingRequest as u16;
+        const PAIRING_RESPONSE: u16 = EndpointMessage::PairingResponse as u16;
+        const UPLINK: u16 = EndpointMessage::Uplink as u16;
+        const GENERIC_ERROR: u16 = EndpointMessage::GenericError as u16;
         let msg_type: EndpointMessage = match msg_type {
-            PAIRING_REQUEST => EndpointMessage::PAIRING_REQUEST,
-            PAIRING_RESPONSE => EndpointMessage::PAIRING_RESPONSE,
-            UPLINK => EndpointMessage::UPLINK,
-            GENERIC_ERROR => EndpointMessage::GENERIC_ERROR,
+            PAIRING_REQUEST => EndpointMessage::PairingRequest,
+            PAIRING_RESPONSE => EndpointMessage::PairingResponse,
+            UPLINK => EndpointMessage::Uplink,
+            GENERIC_ERROR => EndpointMessage::GenericError,
             _ => {
                 println!("Unknown message type");
                 return Err(())

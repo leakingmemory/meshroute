@@ -9,7 +9,7 @@ pub fn run_list_links(opts: &opts::Opts, name: &str) -> ExitCode {
         Ok(c) => c,
         Err(_) => return ExitCode::from(1)
     };
-    match control.command(controlproto::Command::LIST_LINKS) {
+    match control.command(controlproto::Command::ListLinks) {
         Ok(()) => {},
         Err(_) => {
             println!("Failed to send request for the links list to control socket");
@@ -17,7 +17,7 @@ pub fn run_list_links(opts: &opts::Opts, name: &str) -> ExitCode {
         }
     };
     let result = match control.receive(|hdr, buf| {
-        if matches!(hdr.msg_type, ControlMsgType::LINKS_LIST) {
+        if matches!(hdr.msg_type, ControlMsgType::LinksList) {
             Ok(match deserialize_from_slice::<LinksList>(buf) {
                 Ok(r) => r,
                 Err(_) => {
@@ -39,7 +39,7 @@ pub fn run_list_links(opts: &opts::Opts, name: &str) -> ExitCode {
     for item in result.links {
         println!("{}", item)
     }
-    match control.command(controlproto::Command::EXIT) {
+    match control.command(controlproto::Command::Exit) {
         Ok(()) => {},
         Err(_) => {
             println!("Failed to send exit command to control socket");
@@ -64,7 +64,7 @@ pub fn run_addrem_link(opts: &opts::Opts, name: &str, cmd: controlproto::Command
         }
     };
     match control.receive(|hdr, _buf| {
-        if matches!(hdr.msg_type, ControlMsgType::GENERIC_OK) {
+        if matches!(hdr.msg_type, ControlMsgType::GenericOk) {
             Ok(())
         } else {
             println!("Add/remove link request failed");
@@ -81,9 +81,9 @@ pub fn run_addrem_link(opts: &opts::Opts, name: &str, cmd: controlproto::Command
 }
 
 pub fn run_add_link(opts: &opts::Opts, name: &str, link: &str) -> ExitCode {
-    run_addrem_link(opts, name, Command::ADD_LINK, link)
+    run_addrem_link(opts, name, Command::AddLink, link)
 }
 
 pub fn run_remove_link(opts: &opts::Opts, name: &str, link: &str) -> ExitCode {
-    run_addrem_link(opts, name, Command::REMOVE_LINK, link)
+    run_addrem_link(opts, name, Command::RemoveLink, link)
 }

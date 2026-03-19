@@ -8,7 +8,7 @@ pub fn run_info(opts: &opts::Opts, name: &str) -> ExitCode {
         Ok(c) => c,
         Err(_) => return ExitCode::from(1)
     };
-    match control.command(controlproto::Command::INFO_REQUEST) {
+    match control.command(controlproto::Command::InfoRequest) {
         Ok(_) => {},
         Err(_) => {
             println!("Failed to send info request");
@@ -16,7 +16,7 @@ pub fn run_info(opts: &opts::Opts, name: &str) -> ExitCode {
         }
     }
     let result = match control.receive(|hdr, buf| {
-        if matches!(hdr.msg_type, controlproto::ControlMsgType::INFO_RESPONSE) {
+        if matches!(hdr.msg_type, controlproto::ControlMsgType::InfoResponse) {
             Ok(match deserialize_from_slice::<controlproto::InfoResponse>(buf) {
                 Ok(r) => r,
                 Err(_) => {

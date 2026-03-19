@@ -66,30 +66,30 @@ pub struct LinksList {
 
 #[repr(u32)]
 pub enum Command {
-    EXIT = 0,
-    CAPTURE = 1,
-    LISTEN = 2,
-    PAIR = 3,
-    LIST_PAIRING_REQUESTS = 4,
-    ACCEPT_PAIRING = 5,
-    LIST_PAIRED_ENDPOINTS = 6,
-    INFO_REQUEST = 7,
-    LIST_LINKS = 8,
-    ADD_LINK = 9,
-    REMOVE_LINK = 10
+    Exit = 0,
+    Capture = 1,
+    Listen = 2,
+    Pair = 3,
+    ListPairingRequests = 4,
+    AcceptPairing = 5,
+    ListPairedEndpoints = 6,
+    InfoRequest = 7,
+    ListLinks = 8,
+    AddLink = 9,
+    RemoveLink = 10
 }
 
 #[repr(u32)]
 #[derive(Clone)]
 pub enum ControlMsgType {
-    HOST_PACKET = 0,
-    PAIRING_RESPONSE = 1,
-    GENERIC_ERROR = 2,
-    PAIRING_REQUEST_LIST = 3,
-    PAIRED_LIST = 4,
-    INFO_RESPONSE = 5,
-    LINKS_LIST = 6,
-    GENERIC_OK = 7
+    HostPacket = 0,
+    PairingResponse = 1,
+    GenericError = 2,
+    PairingRequestList = 3,
+    PairedList = 4,
+    InfoResponse = 5,
+    LinksList = 6,
+    GenericOk = 7
 }
 
 pub struct ControlMsgHdr {
@@ -112,23 +112,23 @@ impl ControlMsgHdr {
         let len = u32::from_be_bytes(pbuf);
         pbuf.copy_from_slice(&bytes[4..8]);
         let msg_type = u32::from_be_bytes(pbuf);
-        const HOST_PACKET: u32 = ControlMsgType::HOST_PACKET as u32;
-        const PAIRING_RESPONSE: u32 = ControlMsgType::PAIRING_RESPONSE as u32;
-        const GENERIC_ERROR: u32 = ControlMsgType::GENERIC_ERROR as u32;
-        const PAIRING_REQUEST_LIST: u32 = ControlMsgType::PAIRING_REQUEST_LIST as u32;
-        const PAIRED_LIST: u32 = ControlMsgType::PAIRED_LIST as u32;
-        const INFO_RESPONSE: u32 = ControlMsgType::INFO_RESPONSE as u32;
-        const LINKS_LIST: u32 = ControlMsgType::LINKS_LIST as u32;
-        const GENERIC_OK: u32 = ControlMsgType::GENERIC_OK as u32;
+        const HOST_PACKET: u32 = ControlMsgType::HostPacket as u32;
+        const PAIRING_RESPONSE: u32 = ControlMsgType::PairingResponse as u32;
+        const GENERIC_ERROR: u32 = ControlMsgType::GenericError as u32;
+        const PAIRING_REQUEST_LIST: u32 = ControlMsgType::PairingRequestList as u32;
+        const PAIRED_LIST: u32 = ControlMsgType::PairedList as u32;
+        const INFO_RESPONSE: u32 = ControlMsgType::InfoResponse as u32;
+        const LINKS_LIST: u32 = ControlMsgType::LinksList as u32;
+        const GENERIC_OK: u32 = ControlMsgType::GenericOk as u32;
         let msg_type = match msg_type {
-            HOST_PACKET => ControlMsgType::HOST_PACKET,
-            PAIRING_RESPONSE => ControlMsgType::PAIRING_RESPONSE,
-            GENERIC_ERROR => ControlMsgType::GENERIC_ERROR,
-            PAIRING_REQUEST_LIST => ControlMsgType::PAIRING_REQUEST_LIST,
-            PAIRED_LIST => ControlMsgType::PAIRED_LIST,
-            INFO_RESPONSE => ControlMsgType::INFO_RESPONSE,
-            LINKS_LIST => ControlMsgType::LINKS_LIST,
-            GENERIC_OK => ControlMsgType::GENERIC_OK,
+            HOST_PACKET => ControlMsgType::HostPacket,
+            PAIRING_RESPONSE => ControlMsgType::PairingResponse,
+            GENERIC_ERROR => ControlMsgType::GenericError,
+            PAIRING_REQUEST_LIST => ControlMsgType::PairingRequestList,
+            PAIRED_LIST => ControlMsgType::PairedList,
+            INFO_RESPONSE => ControlMsgType::InfoResponse,
+            LINKS_LIST => ControlMsgType::LinksList,
+            GENERIC_OK => ControlMsgType::GenericOk,
             _ => return Err(())
         };
         Ok(Self { len, msg_type })

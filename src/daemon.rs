@@ -21,7 +21,7 @@ use sha2::Digest;
 use crate::{config, controlproto, endpoint, ethernet, ethertable, eventproto, filedes, handshake, keyex, opts, serialwindow, uplink};
 use crate::config::{PairedEndpoint, PairingRequest};
 use crate::controlproto::Command;
-use crate::controlproto::ControlMsgType::HOST_PACKET;
+use crate::controlproto::ControlMsgType::HostPacket;
 use crate::endpoint::{EndpointMessage, PairingResponse};
 use crate::ethernet::EthernetAddress;
 use crate::ethertable::MacEntryLocation::LOCAL;
@@ -174,17 +174,17 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
             }
         }
         let cmd = u32::from_be_bytes(cmdbuf);
-        const EXIT: u32 = Command::EXIT as u32;
-        const CAPTURE: u32 = Command::CAPTURE as u32;
-        const LISTEN: u32 = Command::LISTEN as u32;
-        const PAIR: u32 = Command::PAIR as u32;
-        const LIST_PAIRING_REQUESTS: u32 = Command::LIST_PAIRING_REQUESTS as u32;
-        const ACCEPT_PAIRING: u32 = Command::ACCEPT_PAIRING as u32;
-        const LIST_PAIRED_ENDPOINTS: u32 = Command::LIST_PAIRED_ENDPOINTS as u32;
-        const INFO_REQUEST: u32 = Command::INFO_REQUEST as u32;
-        const LIST_LINKS: u32 = Command::LIST_LINKS as u32;
-        const ADD_LINK: u32 = Command::ADD_LINK as u32;
-        const REMOVE_LINK: u32 = Command::REMOVE_LINK as u32;
+        const EXIT: u32 = Command::Exit as u32;
+        const CAPTURE: u32 = Command::Capture as u32;
+        const LISTEN: u32 = Command::Listen as u32;
+        const PAIR: u32 = Command::Pair as u32;
+        const LIST_PAIRING_REQUESTS: u32 = Command::ListPairingRequests as u32;
+        const ACCEPT_PAIRING: u32 = Command::AcceptPairing as u32;
+        const LIST_PAIRED_ENDPOINTS: u32 = Command::ListPairedEndpoints as u32;
+        const INFO_REQUEST: u32 = Command::InfoRequest as u32;
+        const LIST_LINKS: u32 = Command::ListLinks as u32;
+        const ADD_LINK: u32 = Command::AddLink as u32;
+        const REMOVE_LINK: u32 = Command::RemoveLink as u32;
         match cmd {
             EXIT => return,
             CAPTURE => {
@@ -229,7 +229,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                     Ok(c) => c,
                     Err(_) => {
                         println!("Failed to connect to {} for pairing.", pair_ctrl.addr);
-                        match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_ERROR) {
+                        match write_control(&mut stream, controlproto::ControlMsgType::GenericError) {
                             Ok(_) => {},
                             Err(_) => {
                                 println!("Failed to write control response");
@@ -243,7 +243,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                     Ok(sec) => sec,
                     Err(_) => {
                         println!("Failed to shake hands with {} for pairing.", pair_ctrl.addr);
-                        match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_ERROR) {
+                        match write_control(&mut stream, controlproto::ControlMsgType::GenericError) {
                             Ok(_) => {},
                             Err(_) => {
                                 println!("Failed to write control response");
@@ -264,11 +264,11 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                         return;
                     }
                 };
-                match endpoint.send(EndpointMessage::PAIRING_REQUEST, pairing_request.as_slice()) {
+                match endpoint.send(EndpointMessage::PairingRequest, pairing_request.as_slice()) {
                     Ok(_) => {},
                     Err(_) => {
                         println!("Failed to send pairing request to {}", pair_ctrl.addr);
-                        match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_ERROR) {
+                        match write_control(&mut stream, controlproto::ControlMsgType::GenericError) {
                             Ok(_) => {},
                             Err(_) => {
                                 println!("Failed to write control response");
@@ -283,7 +283,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                     Ok(r) => r,
                     Err(_) => {
                         println!("Failed to receive pairing response from {}", pair_ctrl.addr);
-                        match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_ERROR) {
+                        match write_control(&mut stream, controlproto::ControlMsgType::GenericError) {
                             Ok(_) => {},
                             Err(_) => {
                                 println!("Failed to write control response");
@@ -294,7 +294,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                     }
                 };
                 match response {
-                    EndpointMessage::PAIRING_RESPONSE => {
+                    EndpointMessage::PairingResponse => {
                         let pairing_response = match deserialize_from_slice::<PairingResponse>(response_buf.as_slice()) {
                             Ok(p) => p,
                             Err(_) => {
@@ -343,7 +343,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                             name: name.to_string(),
                             remote_name: pairing_response.name
                         };
-                        match write_control_object(&mut stream, controlproto::ControlMsgType::PAIRING_RESPONSE, &pair_result) {
+                        match write_control_object(&mut stream, controlproto::ControlMsgType::PairingResponse, &pair_result) {
                             Ok(_) => {},
                             Err(_) => {
                                 println!("Failed to write control response");
@@ -355,7 +355,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                     },
                     _ => {
                         println!("Unexpected pairing response from {}", pair_ctrl.addr);
-                        match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_ERROR) {
+                        match write_control(&mut stream, controlproto::ControlMsgType::GenericError) {
                             Ok(_) => {},
                             Err(_) => {
                                 println!("Failed to write control response");
@@ -385,7 +385,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                 let pairing_requests = controlproto::PairingRequestList {
                     requests: pairing_requests
                 };
-                match write_control_object(&mut stream, controlproto::ControlMsgType::PAIRING_REQUEST_LIST, &pairing_requests) {
+                match write_control_object(&mut stream, controlproto::ControlMsgType::PairingRequestList, &pairing_requests) {
                     Ok(_) => {},
                     Err(_) => {
                         println!("Failed to write control response");
@@ -407,7 +407,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                 let paired_endpoints = controlproto::PairedList {
                     endpoints: paired_endpoints
                 };
-                match write_control_object(&mut stream, controlproto::ControlMsgType::PAIRED_LIST, &paired_endpoints) {
+                match write_control_object(&mut stream, controlproto::ControlMsgType::PairedList, &paired_endpoints) {
                     Ok(_) => {},
                     Err(_) => {
                         println!("Failed to write control response");
@@ -472,7 +472,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                         name: name.to_string(),
                         remote_name
                     };
-                    match write_control_object(&mut stream, controlproto::ControlMsgType::PAIRING_RESPONSE, &pair_result) {
+                    match write_control_object(&mut stream, controlproto::ControlMsgType::PairingResponse, &pair_result) {
                         Ok(_) => {},
                         Err(_) => {
                             println!("Failed to write control response");
@@ -511,7 +511,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                     node_pubkey_sha256,
                     node_expiry
                 };
-                match write_control_object(&mut stream, controlproto::ControlMsgType::INFO_RESPONSE, &info) {
+                match write_control_object(&mut stream, controlproto::ControlMsgType::InfoResponse, &info) {
                     Ok(_) => {},
                     Err(_) => {
                         println!("Failed to write control response");
@@ -530,7 +530,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                 let links_resp = controlproto::LinksList {
                     links
                 };
-                match write_control_object(&mut stream, controlproto::ControlMsgType::LINKS_LIST, &links_resp) {
+                match write_control_object(&mut stream, controlproto::ControlMsgType::LinksList, &links_resp) {
                     Ok(_) => {},
                     Err(_) => {
                         println!("Failed to write control response");
@@ -558,7 +558,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                         }
                     }
                 }
-                match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_OK) {
+                match write_control(&mut stream, controlproto::ControlMsgType::GenericOk) {
                     Ok(_) => {},
                     Err(_) => {
                         println!("Failed to write control response");
@@ -587,7 +587,7 @@ fn handle_control(config_file_name: &str, name: &str, mut stream: UnixStream, ev
                         }
                     }
                 }
-                match write_control(&mut stream, controlproto::ControlMsgType::GENERIC_OK) {
+                match write_control(&mut stream, controlproto::ControlMsgType::GenericOk) {
                     Ok(_) => {},
                     Err(_) => {
                         println!("Failed to write control response");
@@ -775,7 +775,7 @@ pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCt
                 if !ctx.capture_streams.is_empty() {
                     let hdr = controlproto::ControlMsgHdr {
                         len: event_buf.len() as u32,
-                        msg_type: HOST_PACKET
+                        msg_type: HostPacket
                     };
                     let hdr = hdr.to_bytes();
                     ctx.capture_streams.retain_mut(|stream| {
@@ -936,7 +936,7 @@ impl WorkerContext {
                                     }
                                 }
                                 match req_type {
-                                    EndpointMessage::PAIRING_REQUEST => {
+                                    EndpointMessage::PairingRequest => {
                                         let pairing_request = match deserialize_from_slice::<endpoint::PairingRequest>(&req_vec) {
                                             Ok(r) => r,
                                             Err(_) => {
@@ -983,7 +983,7 @@ impl WorkerContext {
                                                 return;
                                             }
                                         };
-                                        match endpoint.send(EndpointMessage::PAIRING_RESPONSE, pairing_result.as_slice()) {
+                                        match endpoint.send(EndpointMessage::PairingResponse, pairing_result.as_slice()) {
                                             Ok(_) => {},
                                             Err(_) => {
                                                 println!("Failed to send pairing response");
@@ -1000,7 +1000,7 @@ impl WorkerContext {
                                         }
                                         std::process::exit(0);
                                     }
-                                    EndpointMessage::UPLINK => {
+                                    EndpointMessage::Uplink => {
                                         if let Some(endpoint_name) = &endpoint.name {
                                             let endpoint_name = endpoint_name.clone();
                                             println!("Uplink accepted for {}", endpoint_name);
@@ -1008,15 +1008,15 @@ impl WorkerContext {
                                             println!("Uplink closed for {}", endpoint_name);
                                         } else {
                                             println!("Uplink rejected");
-                                            endpoint.send(EndpointMessage::GENERIC_ERROR, b"").unwrap();
+                                            endpoint.send(EndpointMessage::GenericError, b"").unwrap();
                                         }
                                         break;
                                     },
-                                    EndpointMessage::PAIRING_RESPONSE => {
+                                    EndpointMessage::PairingResponse => {
                                         println!("Unexpected pairing response received");
                                         break;
                                     }
-                                    EndpointMessage::GENERIC_ERROR => {
+                                    EndpointMessage::GenericError => {
                                         println!("Endpoint {} returned generic error", match &endpoint.name {
                                             Some(name) => name.as_str(),
                                             None => "unknown"
@@ -1073,7 +1073,7 @@ impl WorkerContext {
                         }
                     };
                     let mut endpoint = endpoint::Endpoint::new(connection, endpoint_security);
-                    match endpoint.send(EndpointMessage::UPLINK, b"") {
+                    match endpoint.send(EndpointMessage::Uplink, b"") {
                         Ok(_) => {},
                         Err(_) => {
                             println!("Failed to send uplink message to {}", link_from_config);

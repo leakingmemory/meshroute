@@ -2,7 +2,7 @@ use std::process::ExitCode;
 use bson::deserialize_from_slice;
 use crate::control::connect_control;
 use crate::{controlproto, opts};
-use crate::controlproto::ControlMsgType::PAIRING_RESPONSE;
+use crate::controlproto::ControlMsgType::PairingResponse;
 use crate::controlproto::{ControlMsgType, PairResult, PairedList, PairingRequestList};
 
 pub fn run_pair(opts: &opts::Opts, name: &str, addr: &str) -> ExitCode {
@@ -11,7 +11,7 @@ pub fn run_pair(opts: &opts::Opts, name: &str, addr: &str) -> ExitCode {
         Err(_) => return ExitCode::from(1)
     };
     let pair_cmd = controlproto::PairCmd { addr: addr.to_string() };
-    match control.command_with_object(controlproto::Command::PAIR, &pair_cmd) {
+    match control.command_with_object(controlproto::Command::Pair, &pair_cmd) {
         Ok(()) => {},
         Err(_) => {
             println!("Failed to send pairing request command to control socket");
@@ -19,7 +19,7 @@ pub fn run_pair(opts: &opts::Opts, name: &str, addr: &str) -> ExitCode {
         }
     };
     let result = match control.receive(|hdr, buf| {
-        if matches!(hdr.msg_type, PAIRING_RESPONSE) {
+        if matches!(hdr.msg_type, PairingResponse) {
             Ok(match deserialize_from_slice::<PairResult>(buf) {
                 Ok(r) => r,
                 Err(_) => {
@@ -65,7 +65,7 @@ pub fn run_list_pairing_requests(opts: &opts::Opts, name: &str) -> ExitCode {
         Ok(c) => c,
         Err(_) => return ExitCode::from(1)
     };
-    match control.command(controlproto::Command::LIST_PAIRING_REQUESTS) {
+    match control.command(controlproto::Command::ListPairingRequests) {
         Ok(()) => {},
         Err(_) => {
             println!("Failed to send request for the pairing request list to control socket");
@@ -73,7 +73,7 @@ pub fn run_list_pairing_requests(opts: &opts::Opts, name: &str) -> ExitCode {
         }
     };
     let result = match control.receive(|hdr, buf| {
-        if matches!(hdr.msg_type, ControlMsgType::PAIRING_REQUEST_LIST) {
+        if matches!(hdr.msg_type, ControlMsgType::PairingRequestList) {
             Ok(match deserialize_from_slice::<PairingRequestList>(buf) {
                 Ok(r) => r,
                 Err(_) => {
@@ -103,7 +103,7 @@ pub fn run_list_pairing_requests(opts: &opts::Opts, name: &str) -> ExitCode {
             None => println!("{} {} {}", short_key_hash(item.master_pubkey_sha256.as_slice()), item.name, item.expires)
         }
     }
-    match control.command(controlproto::Command::EXIT) {
+    match control.command(controlproto::Command::Exit) {
         Ok(()) => {},
         Err(_) => {
             println!("Failed to send exit command to control socket");
@@ -118,7 +118,7 @@ pub fn run_list_paired(opts: &opts::Opts, name: &str) -> ExitCode {
         Ok(c) => c,
         Err(_) => return ExitCode::from(1)
     };
-    match control.command(controlproto::Command::LIST_PAIRED_ENDPOINTS) {
+    match control.command(controlproto::Command::ListPairedEndpoints) {
         Ok(()) => {},
         Err(_) => {
             println!("Failed to send request for the pairing request list to control socket");
@@ -126,7 +126,7 @@ pub fn run_list_paired(opts: &opts::Opts, name: &str) -> ExitCode {
         }
     };
     let result = match control.receive(|hdr, buf| {
-        if matches!(hdr.msg_type, ControlMsgType::PAIRED_LIST) {
+        if matches!(hdr.msg_type, ControlMsgType::PairedList) {
             Ok(match deserialize_from_slice::<PairedList>(buf) {
                 Ok(r) => r,
                 Err(_) => {
@@ -148,7 +148,7 @@ pub fn run_list_paired(opts: &opts::Opts, name: &str) -> ExitCode {
     for item in result.endpoints {
         println!("{:x?} {}", item.master_pubkey_sha256.as_slice(), item.name);
     }
-    match control.command(controlproto::Command::EXIT) {
+    match control.command(controlproto::Command::Exit) {
         Ok(()) => {},
         Err(_) => {
             println!("Failed to send exit command to control socket");
@@ -281,7 +281,7 @@ pub fn run_accept(opts: &opts::Opts, name: &str, key_hash: &str) -> ExitCode {
         Err(_) => return ExitCode::from(1)
     };
     let pair_cmd = controlproto::AcceptPairingCmd { key_hash };
-    match control.command_with_object(controlproto::Command::ACCEPT_PAIRING, &pair_cmd) {
+    match control.command_with_object(controlproto::Command::AcceptPairing, &pair_cmd) {
         Ok(()) => {},
         Err(_) => {
             println!("Failed to send pairing request command to control socket");
@@ -289,7 +289,7 @@ pub fn run_accept(opts: &opts::Opts, name: &str, key_hash: &str) -> ExitCode {
         }
     };
     let result = match control.receive(|hdr, buf| {
-        if matches!(hdr.msg_type, PAIRING_RESPONSE) {
+        if matches!(hdr.msg_type, PairingResponse) {
             Ok(match deserialize_from_slice::<PairResult>(buf) {
                 Ok(r) => r,
                 Err(_) => {
@@ -322,7 +322,7 @@ pub fn run_finish(opts: &opts::Opts, name: &str, key_hash: &str) -> ExitCode {
         Err(_) => return ExitCode::from(1)
     };
     let pair_cmd = controlproto::AcceptPairingCmd { key_hash };
-    match control.command_with_object(controlproto::Command::ACCEPT_PAIRING, &pair_cmd) {
+    match control.command_with_object(controlproto::Command::AcceptPairing, &pair_cmd) {
         Ok(()) => {},
         Err(_) => {
             println!("Failed to send pairing request command to control socket");
@@ -330,7 +330,7 @@ pub fn run_finish(opts: &opts::Opts, name: &str, key_hash: &str) -> ExitCode {
         }
     };
     let result = match control.receive(|hdr, buf| {
-        if matches!(hdr.msg_type, PAIRING_RESPONSE) {
+        if matches!(hdr.msg_type, PairingResponse) {
             Ok(match deserialize_from_slice::<PairResult>(buf) {
                 Ok(r) => r,
                 Err(_) => {
