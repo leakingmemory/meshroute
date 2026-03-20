@@ -34,4 +34,12 @@ impl EthernetFrame {
     pub fn is_multicast(&self) -> bool {
         (&self.dst_mac).is_multicast()
     }
+    pub fn to_raw(&self) -> Vec<u8> {
+        let mut raw = Vec::with_capacity(14 + self.payload.len());
+        raw.extend_from_slice(&self.dst_mac);
+        raw.extend_from_slice(&self.src_mac);
+        raw.extend_from_slice(&self.ethertype);
+        raw.extend_from_slice(&self.payload);
+        raw
+    }
 }

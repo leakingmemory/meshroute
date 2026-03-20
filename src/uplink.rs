@@ -331,6 +331,10 @@ pub fn forward_packet(packet: &UplinkPacket, uplinks: &Arc<Mutex<Vec<Arc<Mutex<u
     }
 }
 
+pub fn frame_to_raw(frame: &ethernet::EthernetFrame) -> Vec<u8> {
+    frame.to_raw()
+}
+
 pub fn run_uplink(tap_dev: Arc<Mutex<filedes::FileDes>>, my_pubkey_hash: Vec<u8>, uplinks: Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>, uplink_mac_tables: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<ethertable::MacTable>>>>>, uplink_serial_window: Arc<Mutex<HashMap<Vec<u8>, Arc<Mutex<serialwindow::SerialWindow<u32,128>>>>>>, endpoint: &mut endpoint::Endpoint, serial: Arc<AtomicU32>) {
     println!("Run uplink");
     let current_uplink = Arc::new(Mutex::new(uplink::Uplink::new(endpoint.connection.try_clone().unwrap(), endpoint.endpoint_security.encryption_out.clone(), endpoint.endpoint_security.master_pubkey_sha256.clone())));
@@ -474,7 +478,7 @@ pub fn run_uplink(tap_dev: Arc<Mutex<filedes::FileDes>>, my_pubkey_hash: Vec<u8>
                             if _msg.destination.is_empty() || _msg.destination == my_pubkey_hash {
                                 println!("UplinkPacket for me: {:?}", _msg);
                                 let tap_dev = tap_dev.lock().unwrap();
-                                match tap_dev.write_all(_msg.payload.as_slice()) {
+                                match tap_dev.write_all(frame_to_raw(&frame).as_slice()) {
                                     Ok(_) => {},
                                     Err(_) => {
                                         println!("Failed to write to virtual ethernet device");
