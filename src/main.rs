@@ -1,29 +1,29 @@
-mod daemon;
-mod opts;
-mod controlproto;
-mod ping;
-mod control;
-mod config;
-mod keyex;
-mod filedes;
-mod forkedworker;
-mod eventproto;
-mod ethernet;
-mod ethertable;
 mod capture;
-mod listen;
-mod handshake;
-mod pair;
+mod config;
+mod control;
+mod controlproto;
+mod daemon;
 mod encryption;
 mod endpoint;
+mod ethernet;
+mod ethertable;
+mod eventproto;
+mod filedes;
+mod forkedworker;
+mod handshake;
 mod info;
+mod keyex;
 mod link;
-mod uplink;
+mod listen;
+mod opts;
+mod pair;
+mod ping;
 mod serialwindow;
+mod uplink;
 
+use getopts::Options;
 use std::env;
 use std::process::ExitCode;
-use getopts::Options;
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
@@ -40,7 +40,7 @@ fn main() -> ExitCode {
     };
     let mut meshopts = opts::Opts {
         config_dir: "/var/lib/meshroute".to_string(),
-        socket_dir: "/var/run/meshroute".to_string()
+        socket_dir: "/var/run/meshroute".to_string(),
     };
     if matches.opt_present("d") {
         meshopts.config_dir = matches.opt_str("d").unwrap();

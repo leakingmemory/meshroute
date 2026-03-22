@@ -1,6 +1,5 @@
-
 pub struct ForkedWorker {
-    pub pid: libc::pid_t
+    pub pid: libc::pid_t,
 }
 
 impl ForkedWorker {

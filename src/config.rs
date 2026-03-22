@@ -1,39 +1,39 @@
-use std::fs;
-use std::io::ErrorKind;
+use crate::keyex;
 use bson::{deserialize_from_slice, serialize_to_vec};
 use serde::{Deserialize, Serialize};
-use crate::keyex;
+use std::fs;
+use std::io::ErrorKind;
 
 #[derive(Serialize, Deserialize)]
 pub struct ConfigRecord {
     pub name: String,
     #[serde(with = "serde_bytes")]
-    pub data: Vec<u8>
+    pub data: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct ConfigBase {
     pub major: u16,
     pub minor: u16,
-    pub data: Vec<ConfigRecord>
+    pub data: Vec<ConfigRecord>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PairingRequest {
     pub master_pubkey_sha256: Vec<u8>,
     pub name: String,
-    pub expires: i64
+    pub expires: i64,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PairedEndpoint {
     pub master_pubkey_sha256: Vec<u8>,
-    pub name: String
+    pub name: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct EndpointLink {
-    pub name: String
+    pub name: String,
 }
 
 #[derive(Clone)]
@@ -43,26 +43,30 @@ pub struct Config {
     pub listen: Option<String>,
     pub pairing_requests: Vec<PairingRequest>,
     pub paired_endpoints: Vec<PairedEndpoint>,
-    pub links: Vec<String>
+    pub links: Vec<String>,
 }
 
 impl ConfigBase {
     pub fn new() -> Self {
-        Self { major: 0, minor: 0, data: Vec::new() }
+        Self {
+            major: 0,
+            minor: 0,
+            data: Vec::new(),
+        }
     }
-    pub fn deserialize(data: &[u8]) -> Result<Self,()> {
+    pub fn deserialize(data: &[u8]) -> Result<Self, ()> {
         match bson::deserialize_from_slice::<Self>(data) {
             Ok(c) => Ok(c),
-            Err(_) => Err(())
+            Err(_) => Err(()),
         }
     }
-    pub fn serialize(&self) -> Result<Vec<u8>,()> {
+    pub fn serialize(&self) -> Result<Vec<u8>, ()> {
         match bson::serialize_to_vec(self) {
             Ok(v) => Ok(v),
-            Err(_) => Err(())
+            Err(_) => Err(()),
         }
     }
-    pub fn from_file(filename: &str) -> Result<Option<Self>,()> {
+    pub fn from_file(filename: &str) -> Result<Option<Self>, ()> {
         let content = match fs::read(filename) {
             Ok(c) => c,
             Err(err) => {
@@ -70,24 +74,22 @@ impl ConfigBase {
                     return Ok(None);
                 }
                 println!("Error reading config file: {}", err);
-                return Err(())
+                return Err(());
             }
         };
         Self::deserialize(content.as_slice()).map(Some)
     }
-    pub fn save(&self, filename: &str) -> Result<(),()> {
+    pub fn save(&self, filename: &str) -> Result<(), ()> {
         let content = self.serialize()?;
         let mut tmp_filename = filename.to_string();
         tmp_filename.push_str(".tmp");
         let um = unsafe { libc::umask(0o077) };
         let result = match fs::write(tmp_filename.clone(), content) {
-            Ok(_) => {
-                match fs::rename(tmp_filename, filename) {
-                    Ok(_) => Ok(()),
-                    Err(err) => {
-                        println!("Error renaming config file: {}", err);
-                        Err(())
-                    }
+            Ok(_) => match fs::rename(tmp_filename, filename) {
+                Ok(_) => Ok(()),
+                Err(err) => {
+                    println!("Error renaming config file: {}", err);
+                    Err(())
                 }
             },
             Err(err) => {
@@ -113,15 +115,22 @@ impl ConfigBase {
 
 impl Config {
     pub fn new() -> Self {
-        Self { master_key: None, node_key: None, listen: None, pairing_requests: Vec::new(), paired_endpoints: Vec::new(),  links: Vec::new() }
+        Self {
+            master_key: None,
+            node_key: None,
+            listen: None,
+            pairing_requests: Vec::new(),
+            paired_endpoints: Vec::new(),
+            links: Vec::new(),
+        }
     }
-    pub fn from_file(filename: &str) -> Result<Self,()> {
+    pub fn from_file(filename: &str) -> Result<Self, ()> {
         let config = match match ConfigBase::from_file(filename) {
             Ok(c) => c,
-            Err(_) => return Err(())
+            Err(_) => return Err(()),
         } {
             Some(c) => c,
-            None => return Ok(Self::new())
+            None => return Ok(Self::new()),
         };
         let master_key_record = config.get_single_by_name("master_key");
         let master_key = match master_key_record {
@@ -129,10 +138,10 @@ impl Config {
                 Ok(k) => Some(k),
                 Err(_) => {
                     println!("Failed to deserialize master key, ignoring");
-                    return Err(())
+                    return Err(());
                 }
             },
-            None => None
+            None => None,
         };
         let node_key_record = config.get_single_by_name("node_key");
         let node_key = match node_key_record {
@@ -140,72 +149,113 @@ impl Config {
                 Ok(k) => Some(k),
                 Err(_) => {
                     println!("Failed to deserialize node key, ignoring");
-                    return Err(())
+                    return Err(());
                 }
             },
-            None => None
+            None => None,
         };
         let listen_record = config.get_single_by_name("listen");
         let listen = match listen_record {
             Some(l) => Some(str::from_utf8(&l.data).unwrap().to_string()),
-            None => None
+            None => None,
         };
         let pairing_requests_records = config.get_by_name("pairing_requests");
-        let pairing_requests = pairing_requests_records.iter().map(|r| match deserialize_from_slice::<PairingRequest>(r.data.as_slice()) {
-            Ok(p) => Some(p),
-            Err(_) => {
-                println!("Failed to deserialize pairing request {}, ignoring", r.name);
-                None
-            }
-        }).filter(|r| r.is_some()).map(|r| match r {
-            Some(r) => r,
-            None => PairingRequest { master_pubkey_sha256: Vec::new(), name: "".to_string(), expires: 0 }
-        }).collect::<Vec<PairingRequest>>();
+        let pairing_requests = pairing_requests_records
+            .iter()
+            .map(
+                |r| match deserialize_from_slice::<PairingRequest>(r.data.as_slice()) {
+                    Ok(p) => Some(p),
+                    Err(_) => {
+                        println!("Failed to deserialize pairing request {}, ignoring", r.name);
+                        None
+                    }
+                },
+            )
+            .filter(|r| r.is_some())
+            .map(|r| match r {
+                Some(r) => r,
+                None => PairingRequest {
+                    master_pubkey_sha256: Vec::new(),
+                    name: "".to_string(),
+                    expires: 0,
+                },
+            })
+            .collect::<Vec<PairingRequest>>();
         let paired_endpoints_records = config.get_by_name("paired_endpoints");
-        let paired_endpoints = paired_endpoints_records.iter().map(|r| match deserialize_from_slice::<PairedEndpoint>(r.data.as_slice()) {
-            Ok(p) => Some(p),
-            Err(_) => {
-                println!("Failed to deserialize paired endpoint {}, ignoring", r.name);
-                None
-            }
-        }).filter(|r| r.is_some()).map(|r| match r {
-            Some(r) => r,
-            None => PairedEndpoint { master_pubkey_sha256: Vec::new(), name: "".to_string() }
-        }).collect::<Vec<PairedEndpoint>>();
+        let paired_endpoints = paired_endpoints_records
+            .iter()
+            .map(
+                |r| match deserialize_from_slice::<PairedEndpoint>(r.data.as_slice()) {
+                    Ok(p) => Some(p),
+                    Err(_) => {
+                        println!("Failed to deserialize paired endpoint {}, ignoring", r.name);
+                        None
+                    }
+                },
+            )
+            .filter(|r| r.is_some())
+            .map(|r| match r {
+                Some(r) => r,
+                None => PairedEndpoint {
+                    master_pubkey_sha256: Vec::new(),
+                    name: "".to_string(),
+                },
+            })
+            .collect::<Vec<PairedEndpoint>>();
         let link_records = config.get_by_name("links");
-        let links = link_records.iter().map(|r| match deserialize_from_slice::<EndpointLink>(r.data.as_slice()) {
-            Ok(l) => Some(l),
-            Err(_) => {
-                println!("Failed to deserialize link");
-                None
-            }
-        }).filter(|l| l.is_some()).map(|l| match l {
-            Some(l) => l.name,
-            None => "".to_string()
-        }).collect::<Vec<String>>();
-        Ok(Self { master_key, node_key, listen, pairing_requests, paired_endpoints, links })
+        let links = link_records
+            .iter()
+            .map(
+                |r| match deserialize_from_slice::<EndpointLink>(r.data.as_slice()) {
+                    Ok(l) => Some(l),
+                    Err(_) => {
+                        println!("Failed to deserialize link");
+                        None
+                    }
+                },
+            )
+            .filter(|l| l.is_some())
+            .map(|l| match l {
+                Some(l) => l.name,
+                None => "".to_string(),
+            })
+            .collect::<Vec<String>>();
+        Ok(Self {
+            master_key,
+            node_key,
+            listen,
+            pairing_requests,
+            paired_endpoints,
+            links,
+        })
     }
-    pub fn save(&self, filename: &str) -> Result<(),()> {
+    pub fn save(&self, filename: &str) -> Result<(), ()> {
         let mut config_base = ConfigBase::new();
         if let Some(master_key) = &self.master_key {
             let master_key_data = match master_key.serialize() {
                 Ok(d) => d,
                 Err(_) => {
                     println!("Failed to serialize master key");
-                    return Err(())
+                    return Err(());
                 }
             };
-            config_base.data.push(ConfigRecord { name: "master_key".to_string(), data: master_key_data });
+            config_base.data.push(ConfigRecord {
+                name: "master_key".to_string(),
+                data: master_key_data,
+            });
         }
         if let Some(node_key) = &self.node_key {
             let node_key_data = match node_key.serialize() {
                 Ok(d) => d,
                 Err(_) => {
                     println!("Failed to serialize node key");
-                    return Err(())
+                    return Err(());
                 }
             };
-            config_base.data.push(ConfigRecord { name: "node_key".to_string(), data: node_key_data });
+            config_base.data.push(ConfigRecord {
+                name: "node_key".to_string(),
+                data: node_key_data,
+            });
         }
         if let Some(listen) = &self.listen {
             let name = "listen".to_string();
@@ -221,31 +271,46 @@ impl Config {
             let pairing_request_data = match serialize_to_vec(pairing_request) {
                 Ok(d) => d,
                 Err(_) => {
-                    println!("Failed to serialize pairing request {}", pairing_request.name);
-                    return Err(())
+                    println!(
+                        "Failed to serialize pairing request {}",
+                        pairing_request.name
+                    );
+                    return Err(());
                 }
             };
-            config_base.data.push(ConfigRecord { name: "pairing_requests".to_string(), data: pairing_request_data });
+            config_base.data.push(ConfigRecord {
+                name: "pairing_requests".to_string(),
+                data: pairing_request_data,
+            });
         }
         for paired_endpoint in &self.paired_endpoints {
             let pairing_request_data = match serialize_to_vec(paired_endpoint) {
                 Ok(d) => d,
                 Err(_) => {
-                    println!("Failed to serialize pairing request {}", paired_endpoint.name);
-                    return Err(())
+                    println!(
+                        "Failed to serialize pairing request {}",
+                        paired_endpoint.name
+                    );
+                    return Err(());
                 }
             };
-            config_base.data.push(ConfigRecord { name: "paired_endpoints".to_string(), data: pairing_request_data });
+            config_base.data.push(ConfigRecord {
+                name: "paired_endpoints".to_string(),
+                data: pairing_request_data,
+            });
         }
         for link in &self.links {
-            let link_data = match serialize_to_vec(&EndpointLink {name: link.clone()}) {
+            let link_data = match serialize_to_vec(&EndpointLink { name: link.clone() }) {
                 Ok(d) => d,
                 Err(_) => {
                     println!("Failed to serialize link object {}", link);
-                    return Err(())
+                    return Err(());
                 }
             };
-            config_base.data.push(ConfigRecord { name: "links".to_string(), data: link_data });
+            config_base.data.push(ConfigRecord {
+                name: "links".to_string(),
+                data: link_data,
+            });
         }
         config_base.save(filename)
     }

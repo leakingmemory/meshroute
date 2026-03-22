@@ -1,17 +1,16 @@
-
 #[repr(u16)]
 #[derive(Clone, Copy)]
 pub enum EventType {
-    HostPacket = 0
+    HostPacket = 0,
 }
 
 pub struct EventHeader {
     pub data_len: u32,
-    pub event_type: EventType
+    pub event_type: EventType,
 }
 
 impl EventHeader {
-    pub fn from_bytes(buf: &[u8; 6]) -> Result<Self,()> {
+    pub fn from_bytes(buf: &[u8; 6]) -> Result<Self, ()> {
         let mut pbuf = [0u8; 4];
         pbuf.copy_from_slice(&buf[0..4]);
         let data_len = u32::from_be_bytes(pbuf);
@@ -21,11 +20,11 @@ impl EventHeader {
         const HOST_PACKET: u16 = EventType::HostPacket as u16;
         let _event_type = match event_type {
             HOST_PACKET => EventType::HostPacket,
-            _ => return Err(())
+            _ => return Err(()),
         };
         Ok(Self {
             data_len,
-            event_type: EventType::HostPacket
+            event_type: EventType::HostPacket,
         })
     }
     pub fn to_bytes(&self) -> [u8; 6] {

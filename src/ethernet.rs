@@ -5,7 +5,7 @@ pub struct EthernetFrame {
     pub dst_mac: [u8; 6],
     pub src_mac: [u8; 6],
     pub ethertype: [u8; 2],
-    pub payload: Vec<u8>
+    pub payload: Vec<u8>,
 }
 
 pub trait EthernetAddress {
@@ -28,7 +28,7 @@ impl EthernetFrame {
             dst_mac: [0u8; 6],
             src_mac: [0u8; 6],
             ethertype: [0u8; 2],
-            payload: Vec::new()
+            payload: Vec::new(),
         }
     }
     pub fn is_multicast(&self) -> bool {

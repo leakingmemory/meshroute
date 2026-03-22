@@ -1,25 +1,27 @@
-use std::process::ExitCode;
 use crate::control::connect_control;
 use crate::{controlproto, opts};
+use std::process::ExitCode;
 
 pub fn run_listen(opts: &opts::Opts, name: &str, listen: &str) -> ExitCode {
     let mut control = match connect_control(opts, name) {
         Ok(c) => c,
-        Err(_) => return ExitCode::from(1)
+        Err(_) => return ExitCode::from(1),
     };
-    let listen_cmd = controlproto::ListenCmd { listen: listen.to_string() };
+    let listen_cmd = controlproto::ListenCmd {
+        listen: listen.to_string(),
+    };
     match control.command_with_object(controlproto::Command::Listen, &listen_cmd) {
-        Ok(()) => {},
+        Ok(()) => {}
         Err(_) => {
             println!("Failed to send listen command to control socket");
-            return ExitCode::from(1)
+            return ExitCode::from(1);
         }
     };
     match control.command(controlproto::Command::Exit) {
-        Ok(()) => {},
+        Ok(()) => {}
         Err(_) => {
             println!("Failed to send exit command to control socket");
-            return ExitCode::from(1)
+            return ExitCode::from(1);
         }
     };
     ExitCode::from(0)

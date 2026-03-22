@@ -1,6 +1,5 @@
-
 pub struct FileDes {
-    fd: libc::c_int
+    fd: libc::c_int,
 }
 
 impl FileDes {
@@ -10,7 +9,7 @@ impl FileDes {
     pub fn open(name: &str, flags: libc::c_int, mode: libc::c_int) -> FileDes {
         let name = format!("{}\0", name);
         FileDes {
-            fd: unsafe { libc::open(name.as_ptr() as *const libc::c_char, flags, mode) }
+            fd: unsafe { libc::open(name.as_ptr() as *const libc::c_char, flags, mode) },
         }
     }
     pub fn close(&mut self) -> bool {
@@ -23,16 +22,22 @@ impl FileDes {
         }
         false
     }
-    pub unsafe fn ioctl<T>(&self, request: libc::c_ulong, arg: T) -> Result<libc::c_int, libc::c_int> {
+    pub unsafe fn ioctl<T>(
+        &self,
+        request: libc::c_ulong,
+        arg: T,
+    ) -> Result<libc::c_int, libc::c_int> {
         let r = unsafe { libc::ioctl(self.fd, request, arg) };
-        if r >= 0 {
-            Ok(r)
-        } else {
-            Err(r)
-        }
+        if r >= 0 { Ok(r) } else { Err(r) }
     }
     pub fn read(&self, buf: &mut [u8]) -> Result<usize, libc::ssize_t> {
-        let r = unsafe { libc::read(self.fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len() as libc::size_t) };
+        let r = unsafe {
+            libc::read(
+                self.fd,
+                buf.as_mut_ptr() as *mut libc::c_void,
+                buf.len() as libc::size_t,
+            )
+        };
         if r >= 0 {
             let n = r as usize;
             Ok(n)
@@ -41,7 +46,13 @@ impl FileDes {
         }
     }
     pub fn write(&self, buf: &[u8]) -> Result<usize, libc::ssize_t> {
-        let w = unsafe { libc::write(self.fd, buf.as_ptr() as *const libc::c_void, buf.len() as libc::size_t) };
+        let w = unsafe {
+            libc::write(
+                self.fd,
+                buf.as_ptr() as *const libc::c_void,
+                buf.len() as libc::size_t,
+            )
+        };
         if w >= 0 {
             let n = w as usize;
             Ok(n)
@@ -49,7 +60,7 @@ impl FileDes {
             Err(w)
         }
     }
-    pub fn write_all(&self, buf: &[u8]) -> Result<(),()> {
+    pub fn write_all(&self, buf: &[u8]) -> Result<(), ()> {
         let mut off: usize = 0;
         while off < buf.len() {
             let buf = &buf[off..];
@@ -59,8 +70,8 @@ impl FileDes {
                         return Err(());
                     }
                     off = off + s
-                },
-                Err(_) => return Err(())
+                }
+                Err(_) => return Err(()),
             };
         }
         Ok(())
@@ -70,7 +81,9 @@ impl FileDes {
 impl Clone for FileDes {
     fn clone(&self) -> Self {
         if self.fd >= 0 {
-            FileDes { fd: unsafe { libc::dup(self.fd) } }
+            FileDes {
+                fd: unsafe { libc::dup(self.fd) },
+            }
         } else {
             FileDes::new()
         }

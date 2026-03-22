@@ -1,13 +1,13 @@
+use crate::handshake::EndpointSecurity;
+use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use serde::{Deserialize, Serialize};
-use crate::handshake::EndpointSecurity;
 
 pub struct Endpoint {
     pub connection: TcpStream,
     pub endpoint_security: EndpointSecurity,
     buf: Vec<u8>,
-    pub name: Option<String>
+    pub name: Option<String>,
 }
 
 #[repr(u16)]
@@ -20,12 +20,12 @@ pub enum EndpointMessage {
 
 #[derive(Serialize, Deserialize)]
 pub struct PairingRequest {
-    pub name: String
+    pub name: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct PairingResponse {
-    pub name: String
+    pub name: String,
 }
 
 impl Endpoint {
@@ -34,44 +34,50 @@ impl Endpoint {
             connection,
             endpoint_security,
             buf: Vec::new(),
-            name: None
+            name: None,
         }
     }
-    pub fn send(&mut self, endpoint_message: EndpointMessage, message_body: &[u8]) -> Result<(),()> {
-        self.buf.resize(2+message_body.len(), 0);
+    pub fn send(
+        &mut self,
+        endpoint_message: EndpointMessage,
+        message_body: &[u8],
+    ) -> Result<(), ()> {
+        self.buf.resize(2 + message_body.len(), 0);
         let msg_type = endpoint_message as u16;
         self.buf[0..2].copy_from_slice(msg_type.to_be_bytes().as_slice());
         self.buf[2..].copy_from_slice(message_body);
         match self.endpoint_security.encryption_out.encrypt(&mut self.buf) {
-            Ok(_) => {},
-            Err(_) => return Err(())
+            Ok(_) => {}
+            Err(_) => return Err(()),
         };
         let msg_len = self.buf.len();
-        self.buf.resize(msg_len+4, 0);
+        self.buf.resize(msg_len + 4, 0);
         for i in 0..msg_len {
             self.buf[msg_len - i + 3] = self.buf[msg_len - i - 1];
         }
         let msg_len = msg_len as u32;
         self.buf[0..4].copy_from_slice(&msg_len.to_be_bytes());
         match self.connection.write(self.buf.as_slice()) {
-            Ok(s) => if s != self.buf.len() {
-                println!("Connection write error, closing");
-                return Err(())
-            },
+            Ok(s) => {
+                if s != self.buf.len() {
+                    println!("Connection write error, closing");
+                    return Err(());
+                }
+            }
             Err(_) => {
                 println!("Connection write error, closing");
-                return Err(())
+                return Err(());
             }
         };
         Ok(())
     }
-    pub fn recv(&mut self, buf: &mut Vec<u8>) -> Result<EndpointMessage,()> {
+    pub fn recv(&mut self, buf: &mut Vec<u8>) -> Result<EndpointMessage, ()> {
         self.buf.resize(4, 0);
         match self.connection.read_exact(self.buf.as_mut_slice()) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(_) => {
                 println!("Connection read error, closing");
-                return Err(())
+                return Err(());
             }
         };
         let mut msg_size: [u8; 4] = [0; 4];
@@ -80,17 +86,17 @@ impl Endpoint {
         let msg_size: usize = msg_size as usize;
         self.buf.resize(msg_size, 0);
         match self.connection.read_exact(self.buf.as_mut_slice()) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(_) => {
                 println!("Connection read error, closing");
-                return Err(())
+                return Err(());
             }
         };
         match self.endpoint_security.encryption_in.decrypt(&mut self.buf) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(_) => {
                 println!("Failed to decrypt message");
-                return Err(())
+                return Err(());
             }
         };
         let msg_type: [u8; 2] = [self.buf[0], self.buf[1]];
@@ -106,12 +112,12 @@ impl Endpoint {
             GENERIC_ERROR => EndpointMessage::GenericError,
             _ => {
                 println!("Unknown message type");
-                return Err(())
+                return Err(());
             }
         };
-        buf.resize(self.buf.len()-2, 0);
+        buf.resize(self.buf.len() - 2, 0);
         for i in 2..self.buf.len() {
-            buf[i-2] = self.buf[i];
+            buf[i - 2] = self.buf[i];
         }
         Ok(msg_type)
     }

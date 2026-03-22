@@ -1,28 +1,28 @@
-use std::io::{Read, Write};
-use std::net::TcpStream;
-use std::sync::{Arc, Mutex};
+use crate::{config, encryption};
 use rand::RngCore;
-use rsa::pkcs1::DecodeRsaPublicKey;
 use rsa::oaep::{DecryptingKey, EncryptingKey};
-use rsa::{RsaPrivateKey, RsaPublicKey};
+use rsa::pkcs1::DecodeRsaPublicKey;
 use rsa::pkcs1v15::{Signature, SigningKey, VerifyingKey};
 use rsa::pkcs8::DecodePrivateKey;
 use rsa::signature::{SignatureEncoding, Signer, Verifier};
 use rsa::traits::{Decryptor, PublicKeyParts, RandomizedEncryptor};
+use rsa::{RsaPrivateKey, RsaPublicKey};
 use sha2::Digest;
-use crate::{config, encryption};
+use std::io::{Read, Write};
+use std::net::TcpStream;
+use std::sync::{Arc, Mutex};
 
 const PROTO_VERSION_MAJOR: u16 = 0;
 const PROTO_VERSION_MINOR: u16 = 0;
 
-pub fn sign(data: &[u8], privkey: RsaPrivateKey) -> Result<Vec<u8>,()> {
+pub fn sign(data: &[u8], privkey: RsaPrivateKey) -> Result<Vec<u8>, ()> {
     let signing_key = SigningKey::<sha2::Sha512>::new_unprefixed(privkey);
     let signature = signing_key.sign(data);
     let signature = signature.to_vec();
     Ok(signature)
 }
 
-pub fn verify(data: &[u8], signature: &[u8], pubkey: RsaPublicKey) -> Result<(),()>{
+pub fn verify(data: &[u8], signature: &[u8], pubkey: RsaPublicKey) -> Result<(), ()> {
     let verification_key = VerifyingKey::<sha2::Sha512>::new_unprefixed(pubkey);
     let signature = match Signature::try_from(signature) {
         Ok(s) => s,
@@ -31,16 +31,12 @@ pub fn verify(data: &[u8], signature: &[u8], pubkey: RsaPublicKey) -> Result<(),
         }
     };
     match verification_key.verify(data, &signature) {
-        Ok(_) => {
-            Ok(())
-        },
-        Err(_) => {
-            Err(())
-        }
+        Ok(_) => Ok(()),
+        Err(_) => Err(()),
     }
 }
 
-pub fn encrypt(data: &[u8], pubkey: &[u8]) -> Result<Vec<u8>,()> {
+pub fn encrypt(data: &[u8], pubkey: &[u8]) -> Result<Vec<u8>, ()> {
     let pubkey = match RsaPublicKey::from_pkcs1_der(pubkey) {
         Ok(k) => k,
         Err(_) => {
@@ -60,7 +56,12 @@ pub fn encrypt(data: &[u8], pubkey: &[u8]) -> Result<Vec<u8>,()> {
     Ok(encrypted)
 }
 
-pub fn send_pubkeys(connection: &mut TcpStream, config: &Arc<Mutex<config::Config>>, version_major: u16, version_minor: u16) -> Result<(),()> {
+pub fn send_pubkeys(
+    connection: &mut TcpStream,
+    config: &Arc<Mutex<config::Config>>,
+    version_major: u16,
+    version_minor: u16,
+) -> Result<(), ()> {
     let master_pubkey;
     let node_pubkey;
     let node_sig;
@@ -94,29 +95,33 @@ pub fn send_pubkeys(connection: &mut TcpStream, config: &Arc<Mutex<config::Confi
     hdrbuf[16..20].copy_from_slice(&node_sig_size.to_be_bytes());
     if match connection.write(&hdrbuf) {
         Ok(s) => s,
-        Err(_) => 0
-    } != hdrbuf.len() {
+        Err(_) => 0,
+    } != hdrbuf.len()
+    {
         println!("External connection write error, closing");
         return Err(());
     }
     if match connection.write(master_pubkey.as_slice()) {
         Ok(s) => s,
-        Err(_) => 0
-    } != master_pubkey.len() {
+        Err(_) => 0,
+    } != master_pubkey.len()
+    {
         println!("External connection write error, closing");
         return Err(());
     }
     if match connection.write(node_pubkey.as_slice()) {
         Ok(s) => s,
-        Err(_) => 0
-    } != node_pubkey.len() {
+        Err(_) => 0,
+    } != node_pubkey.len()
+    {
         println!("External connection write error, closing");
         return Err(());
     }
     if match connection.write(node_sig.as_slice()) {
         Ok(s) => s,
-        Err(_) => 0
-    } != node_sig.len() {
+        Err(_) => 0,
+    } != node_sig.len()
+    {
         println!("External connection write error, closing");
         return Err(());
     }
@@ -127,10 +132,10 @@ pub struct RecvProtoAndKeys {
     pub master_pubkey: Vec<u8>,
     pub node_pubkey: Vec<u8>,
     pub version_major: u16,
-    pub version_minor: u16
+    pub version_minor: u16,
 }
 
-fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys,()> {
+fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys, ()> {
     let mut master_pubkey: Vec<u8> = Vec::new();
     let mut node_pubkey: Vec<u8> = Vec::new();
     let mut node_sig: Vec<u8> = Vec::new();
@@ -139,10 +144,16 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys,()> {
     {
         let mut hdrbuf = [0u8; 20];
         match match connection.read(&mut hdrbuf) {
-            Ok(s) => if s == 20 { Ok(()) } else { Err(()) },
-            Err(_) => Err(())
+            Ok(s) => {
+                if s == 20 {
+                    Ok(())
+                } else {
+                    Err(())
+                }
+            }
+            Err(_) => Err(()),
         } {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(_) => {
                 println!("Failed to read pubkey data header");
                 return Err(());
@@ -180,7 +191,8 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys,()> {
             println!("Failed to read master pubkey");
             return Err(());
         }
-    } != master_pubkey.len() {
+    } != master_pubkey.len()
+    {
         println!("Failed to read master pubkey (len mismatch)");
         return Err(());
     }
@@ -190,7 +202,8 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys,()> {
             println!("Failed to read node pubkey");
             return Err(());
         }
-    } != node_pubkey.len() {
+    } != node_pubkey.len()
+    {
         println!("Failed to read node pubkey (len mismatch)");
         return Err(());
     }
@@ -200,7 +213,8 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys,()> {
             println!("Failed to read node signature");
             return Err(());
         }
-    } != node_sig.len() {
+    } != node_sig.len()
+    {
         println!("Failed to read node signature (len mismatch)");
         return Err(());
     }
@@ -220,20 +234,26 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys,()> {
                 return Err(());
             }
         };
-        let verifying_key = rsa::pkcs1v15::VerifyingKey::<sha2::Sha512>::new_unprefixed(master_public_key);
+        let verifying_key =
+            rsa::pkcs1v15::VerifyingKey::<sha2::Sha512>::new_unprefixed(master_public_key);
         match verifying_key.verify(node_pubkey.as_slice(), &signature) {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(e) => {
                 println!("Signature verification failed: {:?}", e);
-                return Err(())
-            },
+                return Err(());
+            }
         }
     }
 
-    Ok(RecvProtoAndKeys {master_pubkey, node_pubkey, version_major, version_minor})
+    Ok(RecvProtoAndKeys {
+        master_pubkey,
+        node_pubkey,
+        version_major,
+        version_minor,
+    })
 }
 
-fn generate_key_and_nonce(input: &[u8]) -> Result<encryption::KeyAndNonce,()> {
+fn generate_key_and_nonce(input: &[u8]) -> Result<encryption::KeyAndNonce, ()> {
     let hsv = sha2::Sha512::digest(input);
     let hs = hsv.as_slice();
     let mut counter_bytes = [0u8; 16];
@@ -246,7 +266,11 @@ fn generate_key_and_nonce(input: &[u8]) -> Result<encryption::KeyAndNonce,()> {
     encryption::KeyAndNonce::new(key, nonce_prefix, counter)
 }
 
-fn send_init(connection: &mut TcpStream, recv_pkeys: &RecvProtoAndKeys, config: &Arc<Mutex<config::Config>>) -> Result<encryption::KeyAndNonce,()> {
+fn send_init(
+    connection: &mut TcpStream,
+    recv_pkeys: &RecvProtoAndKeys,
+    config: &Arc<Mutex<config::Config>>,
+) -> Result<encryption::KeyAndNonce, ()> {
     let pubkey = match RsaPublicKey::from_pkcs1_der(recv_pkeys.node_pubkey.as_slice()) {
         Ok(k) => k,
         Err(_) => {
@@ -273,13 +297,15 @@ fn send_init(connection: &mut TcpStream, recv_pkeys: &RecvProtoAndKeys, config: 
             };
             {
                 let node_key = match config.lock().unwrap().node_key {
-                    Some(ref node_key) => match RsaPrivateKey::from_pkcs8_der(node_key.key.private_key.as_slice()) {
-                        Ok(k) => k,
-                        Err(_) => {
-                            println!("Failed to read private key");
-                            return Err(());
+                    Some(ref node_key) => {
+                        match RsaPrivateKey::from_pkcs8_der(node_key.key.private_key.as_slice()) {
+                            Ok(k) => k,
+                            Err(_) => {
+                                println!("Failed to read private key");
+                                return Err(());
+                            }
                         }
-                    },
+                    }
                     None => {
                         println!("Cannot handle connections without a node key");
                         return Err(());
@@ -293,7 +319,10 @@ fn send_init(connection: &mut TcpStream, recv_pkeys: &RecvProtoAndKeys, config: 
                     }
                 };
             }
-            init_block = match encrypt(block_of_material.as_slice(), recv_pkeys.node_pubkey.as_slice()) {
+            init_block = match encrypt(
+                block_of_material.as_slice(),
+                recv_pkeys.node_pubkey.as_slice(),
+            ) {
                 Ok(e) => e,
                 Err(_) => {
                     println!("Failed to encrypt block of material");
@@ -307,7 +336,7 @@ fn send_init(connection: &mut TcpStream, recv_pkeys: &RecvProtoAndKeys, config: 
             init_block[len - i + 15] = init_block[len - i - 1];
         }
         match keys.encrypt(&mut init_block_signature) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(_) => {
                 println!("Failed to encrypt init block signature");
                 return Err(());
@@ -316,43 +345,53 @@ fn send_init(connection: &mut TcpStream, recv_pkeys: &RecvProtoAndKeys, config: 
         init_block[0..8].copy_from_slice(&len.to_be_bytes());
         init_block[8..16].copy_from_slice(&init_block_signature.len().to_be_bytes());
         match connection.write(init_block.as_slice()) {
-            Ok(s) => if s != init_block.len() {
-                println!("External connection write error, closing");
-                return Err(())
-            },
+            Ok(s) => {
+                if s != init_block.len() {
+                    println!("External connection write error, closing");
+                    return Err(());
+                }
+            }
             Err(_) => {
                 println!("External connection write error, closing");
-                return Err(())
-            },
+                return Err(());
+            }
         }
     }
     match connection.write(init_block_signature.as_slice()) {
-        Ok(s) => if s != init_block_signature.len() {
-            println!("External connection write error, closing");
-            return Err(())
-        },
+        Ok(s) => {
+            if s != init_block_signature.len() {
+                println!("External connection write error, closing");
+                return Err(());
+            }
+        }
         Err(_) => {
             println!("External connection write error, closing");
-            return Err(())
-        },
+            return Err(());
+        }
     }
     Ok(keys)
 }
 
-fn recv_init(connection: &mut TcpStream, recv_pkeys: &RecvProtoAndKeys, config: &Arc<Mutex<config::Config>>) -> Result<encryption::KeyAndNonce,()> {
+fn recv_init(
+    connection: &mut TcpStream,
+    recv_pkeys: &RecvProtoAndKeys,
+    config: &Arc<Mutex<config::Config>>,
+) -> Result<encryption::KeyAndNonce, ()> {
     let mut block_of_material_buf: Vec<u8> = Vec::new();
     let block_of_material_len;
     {
         block_of_material_buf.resize(16, 0);
         match connection.read(block_of_material_buf.as_mut_slice()) {
-            Ok(s) => if s != 16 {
-                println!("External connection read error, closing");
-                return Err(())
-            },
+            Ok(s) => {
+                if s != 16 {
+                    println!("External connection read error, closing");
+                    return Err(());
+                }
+            }
             Err(_) => {
                 println!("External connection read error, closing");
-                return Err(())
-            },
+                return Err(());
+            }
         }
         let mut u64buf = [0u8; 8];
         u64buf.copy_from_slice(&block_of_material_buf[0..8]);
@@ -361,34 +400,37 @@ fn recv_init(connection: &mut TcpStream, recv_pkeys: &RecvProtoAndKeys, config: 
         let block_of_material_siglen = u64::from_be_bytes(u64buf) as usize;
         block_of_material_buf.resize(block_of_material_len + block_of_material_siglen, 0);
         match connection.read_exact(block_of_material_buf.as_mut_slice()) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(_) => {
                 println!("External connection read error, closing");
-                return Err(())
-            },
+                return Err(());
+            }
         }
     }
     let decryption_key = match config.lock().unwrap().node_key {
-        Some(ref node_key) => match RsaPrivateKey::from_pkcs8_der(node_key.key.private_key.as_slice()) {
-            Ok(k) => k,
-            Err(_) => {
-                println!("Failed to read private key");
-                return Err(());
+        Some(ref node_key) => {
+            match RsaPrivateKey::from_pkcs8_der(node_key.key.private_key.as_slice()) {
+                Ok(k) => k,
+                Err(_) => {
+                    println!("Failed to read private key");
+                    return Err(());
+                }
             }
-        },
+        }
         None => {
             println!("Cannot handle connections without a node key");
-            return Err(())
-        }
-    };
-    let decryption_key = DecryptingKey::<sha2::Sha256>::new(decryption_key);
-    let block_of_material = match decryption_key.decrypt(&block_of_material_buf[0..block_of_material_len]) {
-        Ok(b) => b,
-        Err(_) => {
-            println!("Failed to decrypt block of material");
             return Err(());
         }
     };
+    let decryption_key = DecryptingKey::<sha2::Sha256>::new(decryption_key);
+    let block_of_material =
+        match decryption_key.decrypt(&block_of_material_buf[0..block_of_material_len]) {
+            Ok(b) => b,
+            Err(_) => {
+                println!("Failed to decrypt block of material");
+                return Err(());
+            }
+        };
     let mut keys = match generate_key_and_nonce(block_of_material.as_slice()) {
         Ok(k) => k,
         Err(_) => {
@@ -398,9 +440,11 @@ fn recv_init(connection: &mut TcpStream, recv_pkeys: &RecvProtoAndKeys, config: 
     };
     let mut signature: Vec<u8> = Vec::new();
     signature.resize(block_of_material_buf.len() - block_of_material_len, 0);
-    signature.as_mut_slice().copy_from_slice(&block_of_material_buf[block_of_material_len..]);
+    signature
+        .as_mut_slice()
+        .copy_from_slice(&block_of_material_buf[block_of_material_len..]);
     match keys.decrypt(&mut signature) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(_) => {
             println!("Failed to decrypt signature");
             return Err(());
@@ -413,11 +457,15 @@ fn recv_init(connection: &mut TcpStream, recv_pkeys: &RecvProtoAndKeys, config: 
             return Err(());
         }
     };
-    match verify(block_of_material.as_slice(), signature.as_slice(), verification_key) {
-        Ok(_) => {},
+    match verify(
+        block_of_material.as_slice(),
+        signature.as_slice(),
+        verification_key,
+    ) {
+        Ok(_) => {}
         Err(_) => {
             println!("Signature verification failed");
-            return Err(())
+            return Err(());
         }
     }
     Ok(keys)
@@ -427,7 +475,7 @@ fn recv_init(connection: &mut TcpStream, recv_pkeys: &RecvProtoAndKeys, config: 
 pub struct EndpointSecurity {
     pub master_pubkey_sha256: Vec<u8>,
     pub encryption_out: encryption::KeyAndNonce,
-    pub encryption_in: encryption::KeyAndNonce
+    pub encryption_in: encryption::KeyAndNonce,
 }
 
 const SERVER_VERSION_MIN: u16 = 0;
@@ -435,23 +483,34 @@ const SERVER_VERSION_MAX: u16 = 0;
 const SERVER_MINOR_VERSION_MIN: [(u16, u16); 1] = [(0u16, 0u16)];
 const SERVER_MINOR_VERSION_MAX: [(u16, u16); 1] = [(0u16, 0u16)];
 
-pub fn run_server_handshake(connection: &mut TcpStream, config: &Arc<Mutex<config::Config>>) -> Result<EndpointSecurity,()> {
+pub fn run_server_handshake(
+    connection: &mut TcpStream,
+    config: &Arc<Mutex<config::Config>>,
+) -> Result<EndpointSecurity, ()> {
     match send_pubkeys(connection, config, PROTO_VERSION_MAJOR, PROTO_VERSION_MINOR) {
-        Ok(_) => {},
-        Err(_) => return Err(())
+        Ok(_) => {}
+        Err(_) => return Err(()),
     }
     let recv_pkeys = match recv_pubkeys(connection) {
         Ok(r) => r,
-        Err(_) => return Err(())
+        Err(_) => return Err(()),
     };
-    if recv_pkeys.version_major < SERVER_VERSION_MIN || recv_pkeys.version_major > SERVER_VERSION_MAX {
-        println!("Protocol major version is out of acceptable range {}-{}: {}", SERVER_VERSION_MIN, SERVER_VERSION_MAX, recv_pkeys.version_major);
-        return Err(())
+    if recv_pkeys.version_major < SERVER_VERSION_MIN
+        || recv_pkeys.version_major > SERVER_VERSION_MAX
+    {
+        println!(
+            "Protocol major version is out of acceptable range {}-{}: {}",
+            SERVER_VERSION_MIN, SERVER_VERSION_MAX, recv_pkeys.version_major
+        );
+        return Err(());
     }
     for minor_min in SERVER_MINOR_VERSION_MIN {
         if recv_pkeys.version_major == minor_min.0 {
             if recv_pkeys.version_minor < minor_min.1 {
-                println!("Protocol minor version is out of acceptable range {}-: {}", minor_min.1, recv_pkeys.version_minor);
+                println!(
+                    "Protocol minor version is out of acceptable range {}-: {}",
+                    minor_min.1, recv_pkeys.version_minor
+                );
                 return Err(());
             }
         }
@@ -459,41 +518,59 @@ pub fn run_server_handshake(connection: &mut TcpStream, config: &Arc<Mutex<confi
     for minor_max in SERVER_MINOR_VERSION_MAX {
         if recv_pkeys.version_major == minor_max.0 {
             if recv_pkeys.version_minor > minor_max.1 {
-                println!("Protocol minor version is out of acceptable range -{}: {}", minor_max.1, recv_pkeys.version_minor);
+                println!(
+                    "Protocol minor version is out of acceptable range -{}: {}",
+                    minor_max.1, recv_pkeys.version_minor
+                );
                 return Err(());
             }
         }
     }
     let encryption_out = match send_init(connection, &recv_pkeys, config) {
         Ok(keys) => keys,
-        Err(_) => return Err(())
+        Err(_) => return Err(()),
     };
     let encryption_in = match recv_init(connection, &recv_pkeys, config) {
         Ok(keys) => keys,
-        Err(_) => return Err(())
+        Err(_) => return Err(()),
     };
-    let master_pubkey_sha256 = sha2::Sha256::digest(recv_pkeys.master_pubkey.as_slice()).as_slice().to_vec();
+    let master_pubkey_sha256 = sha2::Sha256::digest(recv_pkeys.master_pubkey.as_slice())
+        .as_slice()
+        .to_vec();
     Ok(EndpointSecurity {
-        master_pubkey_sha256, encryption_out, encryption_in
+        master_pubkey_sha256,
+        encryption_out,
+        encryption_in,
     })
 }
 
 const CLIENT_VERSION_MIN: u16 = 0;
 const CLIENT_VERSION_MAX: u16 = 0;
 const CLIENT_MINOR_VERSION_MIN: [(u16, u16); 1] = [(0u16, 0u16)];
-pub fn run_client_handshake(connection: &mut TcpStream, config: &Arc<Mutex<config::Config>>) -> Result<EndpointSecurity,()> {
+pub fn run_client_handshake(
+    connection: &mut TcpStream,
+    config: &Arc<Mutex<config::Config>>,
+) -> Result<EndpointSecurity, ()> {
     let mut recv_pkeys = match recv_pubkeys(connection) {
         Ok(r) => r,
-        Err(_) => return Err(())
+        Err(_) => return Err(()),
     };
-    if recv_pkeys.version_major < CLIENT_VERSION_MIN || recv_pkeys.version_major > CLIENT_VERSION_MAX {
-        println!("Protocol major version is out of acceptable range {}-{}: {}", CLIENT_VERSION_MIN, CLIENT_VERSION_MAX, recv_pkeys.version_major);
-        return Err(())
+    if recv_pkeys.version_major < CLIENT_VERSION_MIN
+        || recv_pkeys.version_major > CLIENT_VERSION_MAX
+    {
+        println!(
+            "Protocol major version is out of acceptable range {}-{}: {}",
+            CLIENT_VERSION_MIN, CLIENT_VERSION_MAX, recv_pkeys.version_major
+        );
+        return Err(());
     }
     for minor_min in CLIENT_MINOR_VERSION_MIN {
         if recv_pkeys.version_major == minor_min.0 {
             if recv_pkeys.version_minor < minor_min.1 {
-                println!("Protocol minor version is out of acceptable range {}-: {}", minor_min.1, recv_pkeys.version_minor);
+                println!(
+                    "Protocol minor version is out of acceptable range {}-: {}",
+                    minor_min.1, recv_pkeys.version_minor
+                );
                 return Err(());
             }
         }
@@ -501,25 +578,37 @@ pub fn run_client_handshake(connection: &mut TcpStream, config: &Arc<Mutex<confi
     for minor_max in SERVER_MINOR_VERSION_MAX {
         if recv_pkeys.version_major == minor_max.0 {
             if recv_pkeys.version_minor > minor_max.1 {
-                println!("Protocol minor version is out of acceptable range -{}: {}, downgrading to {}", minor_max.1, recv_pkeys.version_minor, minor_max.1);
+                println!(
+                    "Protocol minor version is out of acceptable range -{}: {}, downgrading to {}",
+                    minor_max.1, recv_pkeys.version_minor, minor_max.1
+                );
                 recv_pkeys.version_minor = minor_max.1;
             }
         }
     }
-    match send_pubkeys(connection, config, recv_pkeys.version_major, recv_pkeys.version_minor) {
-        Ok(_) => {},
-        Err(_) => return Err(())
+    match send_pubkeys(
+        connection,
+        config,
+        recv_pkeys.version_major,
+        recv_pkeys.version_minor,
+    ) {
+        Ok(_) => {}
+        Err(_) => return Err(()),
     }
     let encryption_out = match send_init(connection, &recv_pkeys, config) {
         Ok(keys) => keys,
-        Err(_) => return Err(())
+        Err(_) => return Err(()),
     };
     let encryption_in = match recv_init(connection, &recv_pkeys, config) {
         Ok(keys) => keys,
-        Err(_) => return Err(())
+        Err(_) => return Err(()),
     };
-    let master_pubkey_sha256 = sha2::Sha256::digest(recv_pkeys.master_pubkey.as_slice()).as_slice().to_vec();
+    let master_pubkey_sha256 = sha2::Sha256::digest(recv_pkeys.master_pubkey.as_slice())
+        .as_slice()
+        .to_vec();
     Ok(EndpointSecurity {
-        master_pubkey_sha256, encryption_out, encryption_in
+        master_pubkey_sha256,
+        encryption_out,
+        encryption_in,
     })
 }

@@ -1,6 +1,5 @@
-
 pub struct SerialWindow<T, const W: usize> {
-    pub serials: [T; W]
+    pub serials: [T; W],
 }
 
 pub trait DivByU8 {
@@ -176,9 +175,21 @@ one_value_impl!(i32);
 one_value_impl!(i64);
 one_value_impl!(i128);
 
-impl<T: std::marker::Copy + std::cmp::PartialOrd + num_traits::ops::wrapping::WrappingSub + IntMaxValue + DivByU8 + ZeroValue + OneValue, const W: usize> SerialWindow<T, W> {
+impl<
+    T: std::marker::Copy
+        + std::cmp::PartialOrd
+        + num_traits::ops::wrapping::WrappingSub
+        + IntMaxValue
+        + DivByU8
+        + ZeroValue
+        + OneValue,
+    const W: usize,
+> SerialWindow<T, W>
+{
     pub fn new(init_value: T) -> Self {
-        Self { serials: [init_value; W] }
+        Self {
+            serials: [init_value; W],
+        }
     }
     pub fn reset(&mut self, value: T) {
         let mut v = value;
@@ -199,7 +210,7 @@ impl<T: std::marker::Copy + std::cmp::PartialOrd + num_traits::ops::wrapping::Wr
             }
             if diff >= T::zero_value() && diff < half_max {
                 value
-            } else if diff2 >= T::zero_value() && diff2 < half_max  {
+            } else if diff2 >= T::zero_value() && diff2 < half_max {
                 self.serials[W - 1]
             } else {
                 return;
@@ -213,13 +224,13 @@ impl<T: std::marker::Copy + std::cmp::PartialOrd + num_traits::ops::wrapping::Wr
             }
         }
         for i in 0..W {
-            if self.serials[W-i-1].wrapping_sub(&base_value) < value.wrapping_sub(&base_value) {
-                for j in 0..(W-i-1) {
-                    self.serials[j] = self.serials[j+1];
+            if self.serials[W - i - 1].wrapping_sub(&base_value) < value.wrapping_sub(&base_value) {
+                for j in 0..(W - i - 1) {
+                    self.serials[j] = self.serials[j + 1];
                 }
-                self.serials[W-i-1] = value;
+                self.serials[W - i - 1] = value;
                 return;
-            } else if self.serials[W-i-1] == value {
+            } else if self.serials[W - i - 1] == value {
                 return;
             }
         }
@@ -249,19 +260,24 @@ impl<T: std::marker::Copy + std::cmp::PartialOrd + num_traits::ops::wrapping::Wr
 fn test_0_to_255_wrapping() {
     const TRACKED: usize = 16;
     const ITERATIONS: i32 = 512;
-    let mut tracker: SerialWindow<u8,TRACKED> = SerialWindow::new(0u8);
+    let mut tracker: SerialWindow<u8, TRACKED> = SerialWindow::new(0u8);
     let mut log = [0u8; TRACKED];
     let mut serial = 0u8;
     for i in 0..ITERATIONS {
-        for j in if i < TRACKED as i32 { TRACKED as i32 - i } else { TRACKED as i32 } as usize..TRACKED as usize {
+        for j in if i < TRACKED as i32 {
+            TRACKED as i32 - i
+        } else {
+            TRACKED as i32
+        } as usize..TRACKED as usize
+        {
             let serial = log[j];
             assert!(tracker.observed(serial));
         }
         serial = serial.wrapping_add(1);
-        for j in 0..TRACKED-1 {
-            log[j] = log[j+1];
+        for j in 0..TRACKED - 1 {
+            log[j] = log[j + 1];
         }
-        log[TRACKED-1] = serial;
+        log[TRACKED - 1] = serial;
         tracker.observe(serial);
     }
 }
@@ -269,7 +285,7 @@ fn test_0_to_255_wrapping() {
 #[test]
 fn test_2() {
     const TRACKED: usize = 16;
-    let mut tracker: SerialWindow<u8,TRACKED> = SerialWindow::new(0u8);
+    let mut tracker: SerialWindow<u8, TRACKED> = SerialWindow::new(0u8);
     assert!(tracker.observed(0));
     assert!(!tracker.observed(1));
     assert!(!tracker.observed(2));

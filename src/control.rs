@@ -1,14 +1,14 @@
-use std::io::{Read, Write};
-use std::os::unix::net::UnixStream;
+use crate::controlproto::{Command, ControlMsgHdr};
+use crate::{controlproto, opts};
 use bson::serialize_to_vec;
 use serde::Serialize;
-use crate::{controlproto, opts};
-use crate::controlproto::{Command, ControlMsgHdr};
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
 
 pub struct ControlClient {
     pub greeting: controlproto::Greeting,
     pub stream: UnixStream,
-    pub buffer: Vec<u8>
+    pub buffer: Vec<u8>,
 }
 
 pub fn connect_control(opts: &opts::Opts, name: &str) -> Result<ControlClient, ()> {
@@ -27,7 +27,7 @@ pub fn connect_control(opts: &opts::Opts, name: &str) -> Result<ControlClient, (
     };
     let mut lenbuf = [0u8; 4];
     match stream.read(&mut lenbuf) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(_) => {
             println!("Failed to read length for control protocol");
             return Err(());
@@ -36,7 +36,7 @@ pub fn connect_control(opts: &opts::Opts, name: &str) -> Result<ControlClient, (
     let mut buf: Vec<u8> = Vec::new();
     buf.resize(u32::from_be_bytes(lenbuf) as usize, 0u8);
     match stream.read(buf.as_mut_slice()) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(_) => {
             println!("Failed to read greeting for control protocol");
             return Err(());
@@ -50,61 +50,68 @@ pub fn connect_control(opts: &opts::Opts, name: &str) -> Result<ControlClient, (
         }
     };
     let buffer: Vec<u8> = Vec::new();
-    Ok(ControlClient { greeting, stream, buffer })
+    Ok(ControlClient {
+        greeting,
+        stream,
+        buffer,
+    })
 }
 
 impl ControlClient {
     pub(crate) fn command(&mut self, cmd: Command) -> Result<(), ()> {
         match self.stream.write((cmd as u32).to_be_bytes().as_slice()) {
             Ok(_) => Ok(()),
-            Err(_) => Err(())
+            Err(_) => Err(()),
         }
     }
     pub(crate) fn command_with_object<T>(&mut self, cmd: Command, obj: &T) -> Result<(), ()>
-    where T: Serialize {
+    where
+        T: Serialize,
+    {
         let len = match self.stream.write((cmd as u32).to_be_bytes().as_slice()) {
             Ok(len) => len,
-            Err(_) => return Err(())
+            Err(_) => return Err(()),
         };
         if len != 4 {
             return Err(());
         }
         let vec = match serialize_to_vec::<T>(obj) {
             Ok(vec) => vec,
-            Err(_) => return Err(())
+            Err(_) => return Err(()),
         };
-        let len = match self.stream.write((vec.len() as u32).to_be_bytes().as_slice()) {
+        let len = match self
+            .stream
+            .write((vec.len() as u32).to_be_bytes().as_slice())
+        {
             Ok(len) => len,
-            Err(_) => return Err(())
+            Err(_) => return Err(()),
         };
         if len != 4 {
             return Err(());
         }
         let len = match self.stream.write(vec.as_slice()) {
             Ok(len) => len,
-            Err(_) => return Err(())
+            Err(_) => return Err(()),
         };
-        if len == vec.len() {
-            Ok(())
-        } else {
-            Err(())
-        }
+        if len == vec.len() { Ok(()) } else { Err(()) }
     }
-    pub(crate) fn receive<F,T>(&mut self, func: F) -> Result<T,()>
-    where F: FnOnce(&ControlMsgHdr, &[u8]) -> Result<T,()> {
+    pub(crate) fn receive<F, T>(&mut self, func: F) -> Result<T, ()>
+    where
+        F: FnOnce(&ControlMsgHdr, &[u8]) -> Result<T, ()>,
+    {
         let mut hdrbuf = [0u8; 8];
         match self.stream.read_exact(&mut hdrbuf) {
-            Ok(_) => {},
-            Err(_) => return Err(())
+            Ok(_) => {}
+            Err(_) => return Err(()),
         };
         let hdr = match ControlMsgHdr::from_bytes(&hdrbuf) {
             Ok(h) => h,
-            Err(_) => return Err(())
+            Err(_) => return Err(()),
         };
         self.buffer.resize(hdr.len as usize, 0u8);
         match self.stream.read_exact(self.buffer.as_mut_slice()) {
-            Ok(_) => {},
-            Err(_) => return Err(())
+            Ok(_) => {}
+            Err(_) => return Err(()),
         };
         func(&hdr, &self.buffer)
     }

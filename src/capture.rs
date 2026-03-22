@@ -1,18 +1,18 @@
-use std::process::ExitCode;
-use bson::deserialize_from_slice;
 use crate::control::connect_control;
 use crate::{controlproto, ethernet, opts};
+use bson::deserialize_from_slice;
+use std::process::ExitCode;
 
 pub fn run_capture(opts: &opts::Opts, name: &str) -> ExitCode {
     let mut control = match connect_control(opts, name) {
         Ok(c) => c,
-        Err(_) => return ExitCode::from(1)
+        Err(_) => return ExitCode::from(1),
     };
     match control.command(controlproto::Command::Capture) {
-        Ok(()) => {},
+        Ok(()) => {}
         Err(_) => {
             println!("Failed to send exit command to control socket");
-            return ExitCode::from(1)
+            return ExitCode::from(1);
         }
     };
     loop {
@@ -24,11 +24,22 @@ pub fn run_capture(opts: &opts::Opts, name: &str) -> ExitCode {
                     return Err(());
                 }
             };
-            println!(">> [{}] {:x?} -> {:x?} {:x?} {}", if frame.is_multicast() { "multi" } else { "single" }, frame.src_mac, frame.dst_mac, frame.ethertype, frame.payload.len());
+            println!(
+                ">> [{}] {:x?} -> {:x?} {:x?} {}",
+                if frame.is_multicast() {
+                    "multi"
+                } else {
+                    "single"
+                },
+                frame.src_mac,
+                frame.dst_mac,
+                frame.ethertype,
+                frame.payload.len()
+            );
             Ok(())
         }) {
-            Ok(_) => {},
-            Err(_) => break
+            Ok(_) => {}
+            Err(_) => break,
         };
     }
     ExitCode::from(1)

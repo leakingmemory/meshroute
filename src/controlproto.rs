@@ -1,67 +1,67 @@
-use serde::{Serialize, Deserialize};
 use crate::config;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct Greeting {
     pub name: String,
     pub major: u16,
-    pub minor: u16
+    pub minor: u16,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct ListenCmd {
-    pub listen: String
+    pub listen: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct PairCmd {
-    pub addr: String
+    pub addr: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct AcceptPairingCmd {
-    pub key_hash: [u8; 32]
+    pub key_hash: [u8; 32],
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct LinkCmd {
-    pub name: String
+    pub name: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct PairResult {
     pub master_pubkey_sha256: [u8; 32],
     pub name: String,
-    pub remote_name: String
+    pub remote_name: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct PairingRequestListItem {
     pub master_pubkey_sha256: [u8; 32],
     pub name: String,
-    pub expires: i64
+    pub expires: i64,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct PairingRequestList {
-    pub requests: Vec<PairingRequestListItem>
+    pub requests: Vec<PairingRequestListItem>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct PairedList {
-    pub endpoints: Vec<config::PairedEndpoint>
+    pub endpoints: Vec<config::PairedEndpoint>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct InfoResponse {
     pub master_pubkey_sha256: Vec<u8>,
     pub node_pubkey_sha256: Vec<u8>,
-    pub node_expiry: i64
+    pub node_expiry: i64,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct LinksList {
-    pub links: Vec<String>
+    pub links: Vec<String>,
 }
 
 #[repr(u32)]
@@ -76,7 +76,7 @@ pub enum Command {
     InfoRequest = 7,
     ListLinks = 8,
     AddLink = 9,
-    RemoveLink = 10
+    RemoveLink = 10,
 }
 
 #[repr(u32)]
@@ -89,12 +89,12 @@ pub enum ControlMsgType {
     PairedList = 4,
     InfoResponse = 5,
     LinksList = 6,
-    GenericOk = 7
+    GenericOk = 7,
 }
 
 pub struct ControlMsgHdr {
     pub len: u32,
-    pub msg_type: ControlMsgType
+    pub msg_type: ControlMsgType,
 }
 
 impl ControlMsgHdr {
@@ -106,7 +106,7 @@ impl ControlMsgHdr {
         buf[4..8].copy_from_slice(&tp.to_be_bytes());
         buf
     }
-    pub fn from_bytes(bytes: &[u8;8]) -> Result<Self, ()> {
+    pub fn from_bytes(bytes: &[u8; 8]) -> Result<Self, ()> {
         let mut pbuf: [u8; 4] = [0u8; 4];
         pbuf.copy_from_slice(&bytes[0..4]);
         let len = u32::from_be_bytes(pbuf);
@@ -129,7 +129,7 @@ impl ControlMsgHdr {
             INFO_RESPONSE => ControlMsgType::InfoResponse,
             LINKS_LIST => ControlMsgType::LinksList,
             GENERIC_OK => ControlMsgType::GenericOk,
-            _ => return Err(())
+            _ => return Err(()),
         };
         Ok(Self { len, msg_type })
     }

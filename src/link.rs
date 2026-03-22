@@ -1,19 +1,19 @@
-use std::process::ExitCode;
-use bson::deserialize_from_slice;
 use crate::control::connect_control;
-use crate::{controlproto, opts};
 use crate::controlproto::{Command, ControlMsgType, LinksList};
+use crate::{controlproto, opts};
+use bson::deserialize_from_slice;
+use std::process::ExitCode;
 
 pub fn run_list_links(opts: &opts::Opts, name: &str) -> ExitCode {
     let mut control = match connect_control(opts, name) {
         Ok(c) => c,
-        Err(_) => return ExitCode::from(1)
+        Err(_) => return ExitCode::from(1),
     };
     match control.command(controlproto::Command::ListLinks) {
-        Ok(()) => {},
+        Ok(()) => {}
         Err(_) => {
             println!("Failed to send request for the links list to control socket");
-            return ExitCode::from(1)
+            return ExitCode::from(1);
         }
     };
     let result = match control.receive(|hdr, buf| {
@@ -33,34 +33,42 @@ pub fn run_list_links(opts: &opts::Opts, name: &str) -> ExitCode {
         Ok(opt) => opt,
         Err(_) => {
             println!("Failed to receive the links list from control socket");
-            return ExitCode::from(1)
+            return ExitCode::from(1);
         }
     };
     for item in result.links {
         println!("{}", item)
     }
     match control.command(controlproto::Command::Exit) {
-        Ok(()) => {},
+        Ok(()) => {}
         Err(_) => {
             println!("Failed to send exit command to control socket");
-            return ExitCode::from(1)
+            return ExitCode::from(1);
         }
     };
     ExitCode::from(0)
 }
 
-pub fn run_addrem_link(opts: &opts::Opts, name: &str, cmd: controlproto::Command, link: &str) -> ExitCode {
+pub fn run_addrem_link(
+    opts: &opts::Opts,
+    name: &str,
+    cmd: controlproto::Command,
+    link: &str,
+) -> ExitCode {
     let mut control = match connect_control(opts, name) {
         Ok(c) => c,
-        Err(_) => return ExitCode::from(1)
+        Err(_) => return ExitCode::from(1),
     };
-    match control.command_with_object(cmd, &controlproto::LinkCmd {
-        name: link.to_string()
-    }) {
-        Ok(()) => {},
+    match control.command_with_object(
+        cmd,
+        &controlproto::LinkCmd {
+            name: link.to_string(),
+        },
+    ) {
+        Ok(()) => {}
         Err(_) => {
             println!("Failed to send request to control socket");
-            return ExitCode::from(1)
+            return ExitCode::from(1);
         }
     };
     match control.receive(|hdr, _buf| {
@@ -68,13 +76,13 @@ pub fn run_addrem_link(opts: &opts::Opts, name: &str, cmd: controlproto::Command
             Ok(())
         } else {
             println!("Add/remove link request failed");
-            return Err(())
+            return Err(());
         }
     }) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(_) => {
             println!("Add/remove link request failed");
-            return ExitCode::from(1)
+            return ExitCode::from(1);
         }
     };
     ExitCode::from(0)
