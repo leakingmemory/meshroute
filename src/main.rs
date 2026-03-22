@@ -15,6 +15,7 @@ mod info;
 mod keyex;
 mod link;
 mod listen;
+mod licenses;
 mod opts;
 mod pair;
 mod ping;
@@ -127,6 +128,8 @@ fn main() -> ExitCode {
                 print_usage(&program, opts);
                 return ExitCode::from(1);
             }
+        } else if matches.free[0] == "licenses" {
+            return licenses::run_licenses();
         } else {
             print_usage(&program, opts);
             return ExitCode::from(1);
@@ -160,5 +163,7 @@ fn print_usage(program: &str, opts: Options) {
     let brief = format!(" {} [options] remove-link <name> <addr:port>\n", program);
     print!("{}", &brief);
     let brief = format!(" {} [options] list-links <name>\n", program);
+    print!("{}", &brief);
+    let brief = format!(" {} licenses\n", program);
     print!("{}", opts.usage(&brief));
 }
