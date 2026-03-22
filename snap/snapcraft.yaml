@@ -1,0 +1,29 @@
+name: meshroute
+base: core22
+version: '0.1.0'
+license: MIT
+title: Meshroute network daemon
+summary: Meshroute simple mesh network routing daemon
+description: Meshroute is a simple mesh network routing daemon that allows multiple networks to be bridged.
+
+contact:
+  - sigsegv@radiotube.org
+
+grade: stable
+confinement: strict
+
+apps:
+  meshroute:
+    command: bin/meshroute
+    plugs:
+      - network
+      - network-bind
+      - network-control
+      - system-observe
+      - process-control
+
+parts:
+  meshroute:
+    plugin: rust
+    source: .
+    rust-channel: "stable"
