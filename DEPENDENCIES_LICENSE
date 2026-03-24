@@ -15472,7 +15472,7 @@ END OF TERMS AND CONDITIONS
 ================================================================================
 
 ================================================================================
-rsa@0.9.9: MIT OR Apache-2.0 (LICENSE-MIT)
+rsa@0.9.10: MIT OR Apache-2.0 (LICENSE-MIT)
 --------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -15500,7 +15500,7 @@ DEALINGS IN THE SOFTWARE.
 ================================================================================
 
 ================================================================================
-rsa@0.9.9: MIT OR Apache-2.0 (LICENSE-APACHE)
+rsa@0.9.10: MIT OR Apache-2.0 (LICENSE-APACHE)
 --------------------------------------------------------------------------------
 Apache License
                         Version 2.0, January 2004
