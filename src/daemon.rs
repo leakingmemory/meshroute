@@ -39,25 +39,15 @@ where
         let len: u32;
         {
             let mut buf: [u8; 4] = [0u8; 4];
-            let mut off = 0;
-            while off < buf.len() {
-                let rd = match stream.read(&mut buf[off..]) {
-                    Ok(rd) => rd,
-                    Err(_) => return Err(()),
-                };
-                off += rd;
+            if let Err(_) = stream.read_exact(&mut buf) {
+                return Err(());
             }
             len = u32::from_be_bytes(buf);
         }
         buf.resize(len as usize, 0);
     }
-    let mut off = 0;
-    while off < buf.len() {
-        let rd = match stream.read(&mut buf[off..]) {
-            Ok(rd) => rd,
-            Err(_) => return Err(()),
-        };
-        off += rd;
+    if let Err(_) = stream.read_exact(&mut buf) {
+        return Err(());
     }
     match deserialize_from_slice(&buf) {
         Ok(obj) => Ok(obj),
@@ -75,26 +65,12 @@ fn write_control(
         msg_type,
     };
     let hdr = hdr.to_bytes();
-    let hdrlen = match stream.write(&hdr) {
-        Ok(len) => len,
-        Err(_) => {
-            println!("Failed to write control message header");
-            return Err(());
-        }
-    };
-    if hdrlen != hdr.len() {
-        println!("Failed to write control message header: short write");
+    if let Err(_) = stream.write_all(&hdr) {
+        println!("Failed to write control message header");
         return Err(());
     }
-    let msglen = match stream.write(buf.as_slice()) {
-        Ok(len) => len,
-        Err(_) => {
-            println!("Failed to write control message data");
-            return Err(());
-        }
-    };
-    if msglen != buf.len() {
-        println!("Failed to write control message data: short write");
+    if let Err(_) = stream.write_all(buf.as_slice()) {
+        println!("Failed to write control message data");
         return Err(());
     }
     Ok(())
@@ -827,19 +803,9 @@ pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCt
         let hdr;
         {
             let mut hdrbuf = [0u8; 6];
-            let mut hdroff = 0;
-            loop {
-                match event_reader.read(&mut hdrbuf[hdroff..]) {
-                    Ok(len) => {
-                        hdroff += len;
-                    }
-                    Err(_) => {
-                        println!("Failed to read event header");
-                    }
-                }
-                if hdroff >= 6 {
-                    break;
-                }
+            if let Err(_) = event_reader.read_exact(&mut hdrbuf) {
+                println!("Failed to read event header");
+                return;
             }
             hdr = match eventproto::EventHeader::from_bytes(&hdrbuf) {
                 Ok(hdr) => hdr,
@@ -850,22 +816,9 @@ pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCt
             };
         }
         event_buf.resize(hdr.data_len as usize, 0);
-        {
-            let mut dataoff = 0;
-            loop {
-                match event_reader.read(&mut event_buf[dataoff..]) {
-                    Ok(len) => {
-                        dataoff += len;
-                    }
-                    Err(_) => {
-                        println!("Failed to read event data");
-                        return;
-                    }
-                }
-                if dataoff >= hdr.data_len as usize {
-                    break;
-                }
-            }
+        if let Err(_) = event_reader.read_exact(&mut event_buf) {
+            println!("Failed to read event data");
+            return;
         }
         let mut ctx = ctx.lock().unwrap();
         match hdr.event_type {
@@ -897,28 +850,20 @@ pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCt
                     };
                     let hdr = hdr.to_bytes();
                     ctx.capture_streams.retain_mut(|stream| {
-                        let hdrlen = match stream.write(&hdr) {
-                            Ok(len) => len,
+                        let _hdrlen = match stream.write_all(&hdr) {
+                            Ok(_) => hdr.len(),
                             Err(_) => {
                                 println!("Failed to write control message header");
                                 return false;
                             }
                         };
-                        if hdrlen != hdr.len() {
-                            println!("Failed to write control message header: short write");
-                            return false;
-                        }
-                        let msglen = match stream.write(event_buf.as_slice()) {
-                            Ok(len) => len,
+                        let _msglen = match stream.write_all(event_buf.as_slice()) {
+                            Ok(_) => event_buf.len(),
                             Err(_) => {
                                 println!("Failed to write control message data");
                                 return false;
                             }
                         };
-                        if msglen != event_buf.len() {
-                            println!("Failed to write control message data: short write");
-                            return false;
-                        }
                         true
                     });
                 }

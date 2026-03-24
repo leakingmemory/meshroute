@@ -93,35 +93,19 @@ pub fn send_pubkeys(
     hdrbuf[8..12].copy_from_slice(&master_pubkey_size.to_be_bytes());
     hdrbuf[12..16].copy_from_slice(&node_pubkey_size.to_be_bytes());
     hdrbuf[16..20].copy_from_slice(&node_sig_size.to_be_bytes());
-    if match connection.write(&hdrbuf) {
-        Ok(s) => s,
-        Err(_) => 0,
-    } != hdrbuf.len()
-    {
+    if let Err(_) = connection.write_all(&hdrbuf) {
         println!("External connection write error, closing");
         return Err(());
     }
-    if match connection.write(master_pubkey.as_slice()) {
-        Ok(s) => s,
-        Err(_) => 0,
-    } != master_pubkey.len()
-    {
+    if let Err(_) = connection.write_all(master_pubkey.as_slice()) {
         println!("External connection write error, closing");
         return Err(());
     }
-    if match connection.write(node_pubkey.as_slice()) {
-        Ok(s) => s,
-        Err(_) => 0,
-    } != node_pubkey.len()
-    {
+    if let Err(_) = connection.write_all(node_pubkey.as_slice()) {
         println!("External connection write error, closing");
         return Err(());
     }
-    if match connection.write(node_sig.as_slice()) {
-        Ok(s) => s,
-        Err(_) => 0,
-    } != node_sig.len()
-    {
+    if let Err(_) = connection.write_all(node_sig.as_slice()) {
         println!("External connection write error, closing");
         return Err(());
     }
@@ -143,21 +127,9 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys, ()> {
     let version_minor: u16;
     {
         let mut hdrbuf = [0u8; 20];
-        match match connection.read(&mut hdrbuf) {
-            Ok(s) => {
-                if s == 20 {
-                    Ok(())
-                } else {
-                    Err(())
-                }
-            }
-            Err(_) => Err(()),
-        } {
-            Ok(_) => {}
-            Err(_) => {
-                println!("Failed to read pubkey data header");
-                return Err(());
-            }
+        if let Err(_) = connection.read_exact(&mut hdrbuf) {
+            println!("Failed to read pubkey data header");
+            return Err(());
         }
         let mut u32buf = [0u8; 4];
         u32buf.copy_from_slice(&hdrbuf[0..4]);
@@ -185,37 +157,16 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys, ()> {
         node_pubkey.resize(node_pubkey_size as usize, 0);
         node_sig.resize(node_sig_size as usize, 0);
     }
-    if match connection.read(&mut master_pubkey) {
-        Ok(s) => s,
-        Err(_) => {
-            println!("Failed to read master pubkey");
-            return Err(());
-        }
-    } != master_pubkey.len()
-    {
-        println!("Failed to read master pubkey (len mismatch)");
+    if let Err(_) = connection.read_exact(&mut master_pubkey) {
+        println!("Failed to read master pubkey");
         return Err(());
     }
-    if match connection.read(&mut node_pubkey) {
-        Ok(s) => s,
-        Err(_) => {
-            println!("Failed to read node pubkey");
-            return Err(());
-        }
-    } != node_pubkey.len()
-    {
-        println!("Failed to read node pubkey (len mismatch)");
+    if let Err(_) = connection.read_exact(&mut node_pubkey) {
+        println!("Failed to read node pubkey");
         return Err(());
     }
-    if match connection.read(&mut node_sig) {
-        Ok(s) => s,
-        Err(_) => {
-            println!("Failed to read node signature");
-            return Err(());
-        }
-    } != node_sig.len()
-    {
-        println!("Failed to read node signature (len mismatch)");
+    if let Err(_) = connection.read_exact(&mut node_sig) {
+        println!("Failed to read node signature");
         return Err(());
     }
 
@@ -344,30 +295,14 @@ fn send_init(
         }
         init_block[0..8].copy_from_slice(&len.to_be_bytes());
         init_block[8..16].copy_from_slice(&init_block_signature.len().to_be_bytes());
-        match connection.write(init_block.as_slice()) {
-            Ok(s) => {
-                if s != init_block.len() {
-                    println!("External connection write error, closing");
-                    return Err(());
-                }
-            }
-            Err(_) => {
-                println!("External connection write error, closing");
-                return Err(());
-            }
-        }
-    }
-    match connection.write(init_block_signature.as_slice()) {
-        Ok(s) => {
-            if s != init_block_signature.len() {
-                println!("External connection write error, closing");
-                return Err(());
-            }
-        }
-        Err(_) => {
+        if let Err(_) = connection.write_all(init_block.as_slice()) {
             println!("External connection write error, closing");
             return Err(());
         }
+    }
+    if let Err(_) = connection.write_all(init_block_signature.as_slice()) {
+        println!("External connection write error, closing");
+        return Err(());
     }
     Ok(keys)
 }
@@ -381,17 +316,9 @@ fn recv_init(
     let block_of_material_len;
     {
         block_of_material_buf.resize(16, 0);
-        match connection.read(block_of_material_buf.as_mut_slice()) {
-            Ok(s) => {
-                if s != 16 {
-                    println!("External connection read error, closing");
-                    return Err(());
-                }
-            }
-            Err(_) => {
-                println!("External connection read error, closing");
-                return Err(());
-            }
+        if let Err(_) = connection.read_exact(block_of_material_buf.as_mut_slice()) {
+            println!("External connection read error, closing");
+            return Err(());
         }
         let mut u64buf = [0u8; 8];
         u64buf.copy_from_slice(&block_of_material_buf[0..8]);

@@ -26,21 +26,15 @@ pub fn connect_control(opts: &opts::Opts, name: &str) -> Result<ControlClient, (
         }
     };
     let mut lenbuf = [0u8; 4];
-    match stream.read(&mut lenbuf) {
-        Ok(_) => {}
-        Err(_) => {
-            println!("Failed to read length for control protocol");
-            return Err(());
-        }
+    if let Err(_) = stream.read_exact(&mut lenbuf) {
+        println!("Failed to read length for control protocol");
+        return Err(());
     }
     let mut buf: Vec<u8> = Vec::new();
     buf.resize(u32::from_be_bytes(lenbuf) as usize, 0u8);
-    match stream.read(buf.as_mut_slice()) {
-        Ok(_) => {}
-        Err(_) => {
-            println!("Failed to read greeting for control protocol");
-            return Err(());
-        }
+    if let Err(_) = stream.read_exact(buf.as_mut_slice()) {
+        println!("Failed to read greeting for control protocol");
+        return Err(());
     }
     let greeting = match bson::deserialize_from_slice::<controlproto::Greeting>(buf.as_slice()) {
         Ok(g) => g,
