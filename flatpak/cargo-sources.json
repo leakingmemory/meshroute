@@ -1029,14 +1029,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/rsa/rsa-0.9.9.crate",
-    "sha256": "40a0376c50d0358279d9d643e4bf7b7be212f1f4ff1da9070a7b54d22ef75c88",
-    "dest": "cargo/vendor/rsa-0.9.9"
+    "url": "https://static.crates.io/crates/rsa/rsa-0.9.10.crate",
+    "sha256": "b8573f03f5883dcaebdfcf4725caa1ecb9c15b2ef50c43a07b816e06799bb12d",
+    "dest": "cargo/vendor/rsa-0.9.10"
   },
   {
     "type": "inline",
-    "contents": "{\"package\": \"40a0376c50d0358279d9d643e4bf7b7be212f1f4ff1da9070a7b54d22ef75c88\", \"files\": {}}",
-    "dest": "cargo/vendor/rsa-0.9.9",
+    "contents": "{\"package\": \"b8573f03f5883dcaebdfcf4725caa1ecb9c15b2ef50c43a07b816e06799bb12d\", \"files\": {}}",
+    "dest": "cargo/vendor/rsa-0.9.10",
     "dest-filename": ".cargo-checksum.json"
   },
   {
