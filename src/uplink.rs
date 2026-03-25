@@ -522,7 +522,6 @@ pub fn run_uplink(
                                 uplink_mac_table.add_entry_if_not_exists(&frame.src_mac);
                             }
                             if _msg.destination.is_empty() || _msg.destination == my_pubkey_hash {
-                                println!("UplinkPacket for me: {:?}", _msg);
                                 let tap_dev = tap_dev.lock().unwrap();
                                 match tap_dev.write_all(frame_to_raw(&frame).as_slice()) {
                                     Ok(_) => {}
@@ -534,8 +533,6 @@ pub fn run_uplink(
                             if _msg.destination.is_empty() || _msg.destination != my_pubkey_hash {
                                 forward_packet(&_msg, &uplinks);
                             }
-                        } else {
-                            println!("Dropped UplinkPacket: {:?}", _msg);
                         }
                     }
                     Err(_) => {

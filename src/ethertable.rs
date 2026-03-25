@@ -86,7 +86,6 @@ impl MacTable {
     }
     pub fn add_entry_if_not_exists(&mut self, addr: &[u8; 6]) {
         let mac_hash = addr.hash_value();
-        println!("hash: {:x}", mac_hash);
         let idx1 = (mac_hash >> 8) as usize;
         let idx2 = (mac_hash & 0xff) as usize;
         let level2 = match self.entries[idx1] {
@@ -112,7 +111,6 @@ impl MacTable {
     }
     pub fn remove_entry_if_exists(&mut self, addr: &[u8; 6]) {
         let mac_hash = addr.hash_value();
-        println!("hash: {:x}", mac_hash);
         let idx1 = (mac_hash >> 8) as usize;
         let idx2 = (mac_hash & 0xff) as usize;
         let level2 = match self.entries[idx1] {
@@ -127,7 +125,6 @@ impl MacTable {
     }
     pub fn has_entry(&mut self, addr: &[u8; 6]) -> bool {
         let mac_hash = addr.hash_value();
-        println!("hash: {:x}", mac_hash);
         let idx1 = (mac_hash >> 8) as usize;
         let idx2 = (mac_hash & 0xff) as usize;
         let level2 = match self.entries[idx1] {
