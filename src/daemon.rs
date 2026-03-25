@@ -831,18 +831,6 @@ pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCt
                             return;
                         }
                     };
-                println!(
-                    ">> [{}] {:x?} -> {:x?} {:x?} {}",
-                    if frame.is_multicast() {
-                        "multi"
-                    } else {
-                        "single"
-                    },
-                    frame.src_mac,
-                    frame.dst_mac,
-                    frame.ethertype,
-                    frame.payload.len()
-                );
                 if !ctx.capture_streams.is_empty() {
                     let hdr = controlproto::ControlMsgHdr {
                         len: event_buf.len() as u32,
