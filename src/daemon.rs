@@ -823,14 +823,6 @@ pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCt
         let mut ctx = ctx.lock().unwrap();
         match hdr.event_type {
             EventType::HostPacket => {
-                let frame: ethernet::EthernetFrame =
-                    match deserialize_from_slice(event_buf.as_slice()) {
-                        Ok(p) => p,
-                        Err(_) => {
-                            println!("Failed to deserialize host packet event");
-                            return;
-                        }
-                    };
                 if !ctx.capture_streams.is_empty() {
                     let hdr = controlproto::ControlMsgHdr {
                         len: event_buf.len() as u32,
