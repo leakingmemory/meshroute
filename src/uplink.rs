@@ -584,4 +584,5 @@ pub fn run_uplink(
         let mut uplinks_lock = uplinks.lock().unwrap();
         uplinks_lock.retain(|u| !Arc::ptr_eq(u, &current_uplink));
     }
+    println!("Uplink connection closed");
 }
