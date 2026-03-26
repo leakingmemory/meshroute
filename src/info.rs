@@ -11,7 +11,7 @@ pub fn run_info(opts: &opts::Opts, name: &str) -> ExitCode {
     match control.command(controlproto::Command::InfoRequest) {
         Ok(_) => {}
         Err(_) => {
-            println!("Failed to send info request");
+            eprintln!("Failed to send info request");
             return ExitCode::from(1);
         }
     }
@@ -21,19 +21,19 @@ pub fn run_info(opts: &opts::Opts, name: &str) -> ExitCode {
                 match deserialize_from_slice::<controlproto::InfoResponse>(buf) {
                     Ok(r) => r,
                     Err(_) => {
-                        println!("Failed to deserialize info response");
+                        eprintln!("Failed to deserialize info response");
                         return Err(());
                     }
                 },
             )
         } else {
-            println!("Info request failed");
+            eprintln!("Info request failed");
             Err(())
         }
     }) {
         Ok(opt) => opt,
         Err(_) => {
-            println!("Failed to receive info response from control socket");
+            eprintln!("Failed to receive info response from control socket");
             return ExitCode::from(1);
         }
     };

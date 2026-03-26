@@ -16,7 +16,7 @@ pub fn run_pair(opts: &opts::Opts, name: &str, addr: &str) -> ExitCode {
     match control.command_with_object(controlproto::Command::Pair, &pair_cmd) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send pairing request command to control socket");
+            eprintln!("Failed to send pairing request command to control socket");
             return ExitCode::from(1);
         }
     };
@@ -25,18 +25,18 @@ pub fn run_pair(opts: &opts::Opts, name: &str, addr: &str) -> ExitCode {
             Ok(match deserialize_from_slice::<PairResult>(buf) {
                 Ok(r) => r,
                 Err(_) => {
-                    println!("Failed to deserialize pairing response");
+                    eprintln!("Failed to deserialize pairing response");
                     return Err(());
                 }
             })
         } else {
-            println!("Pairing failed");
+            eprintln!("Pairing failed");
             Err(())
         }
     }) {
         Ok(opt) => opt,
         Err(_) => {
-            println!("Failed to receive pairing response from control socket");
+            eprintln!("Failed to receive pairing response from control socket");
             return ExitCode::from(1);
         }
     };
@@ -84,7 +84,7 @@ pub fn run_list_pairing_requests(opts: &opts::Opts, name: &str) -> ExitCode {
     match control.command(controlproto::Command::ListPairingRequests) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send request for the pairing request list to control socket");
+            eprintln!("Failed to send request for the pairing request list to control socket");
             return ExitCode::from(1);
         }
     };
@@ -93,18 +93,18 @@ pub fn run_list_pairing_requests(opts: &opts::Opts, name: &str) -> ExitCode {
             Ok(match deserialize_from_slice::<PairingRequestList>(buf) {
                 Ok(r) => r,
                 Err(_) => {
-                    println!("Failed to deserialize pairing request list");
+                    eprintln!("Failed to deserialize pairing request list");
                     return Err(());
                 }
             })
         } else {
-            println!("Pairing request list request failed");
+            eprintln!("Pairing request list request failed");
             Err(())
         }
     }) {
         Ok(opt) => opt,
         Err(_) => {
-            println!("Failed to receive the pairing request list from control socket");
+            eprintln!("Failed to receive the pairing request list from control socket");
             return ExitCode::from(1);
         }
     };
@@ -132,7 +132,7 @@ pub fn run_list_pairing_requests(opts: &opts::Opts, name: &str) -> ExitCode {
     match control.command(controlproto::Command::Exit) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send exit command to control socket");
+            eprintln!("Failed to send exit command to control socket");
             return ExitCode::from(1);
         }
     };
@@ -147,7 +147,7 @@ pub fn run_list_paired(opts: &opts::Opts, name: &str) -> ExitCode {
     match control.command(controlproto::Command::ListPairedEndpoints) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send request for the pairing request list to control socket");
+            eprintln!("Failed to send request for the pairing request list to control socket");
             return ExitCode::from(1);
         }
     };
@@ -156,18 +156,18 @@ pub fn run_list_paired(opts: &opts::Opts, name: &str) -> ExitCode {
             Ok(match deserialize_from_slice::<PairedList>(buf) {
                 Ok(r) => r,
                 Err(_) => {
-                    println!("Failed to deserialize pairing request list");
+                    eprintln!("Failed to deserialize pairing request list");
                     return Err(());
                 }
             })
         } else {
-            println!("Pairing request list request failed");
+            eprintln!("Pairing request list request failed");
             Err(())
         }
     }) {
         Ok(opt) => opt,
         Err(_) => {
-            println!("Failed to receive the pairing request list from control socket");
+            eprintln!("Failed to receive the pairing request list from control socket");
             return ExitCode::from(1);
         }
     };
@@ -177,7 +177,7 @@ pub fn run_list_paired(opts: &opts::Opts, name: &str) -> ExitCode {
     match control.command(controlproto::Command::Exit) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send exit command to control socket");
+            eprintln!("Failed to send exit command to control socket");
             return ExitCode::from(1);
         }
     };
@@ -207,7 +207,7 @@ pub fn parse_key_hash(key_hash: &str) -> Result<[u8; 32], ()> {
         i += 1;
     }
     if i >= key_hash.len() || key_hash[i] != b'[' {
-        println!("Expected key hash parameter to start with [");
+        eprintln!("Expected key hash parameter to start with [");
         return Err(());
     }
     i += 1;
@@ -221,19 +221,19 @@ pub fn parse_key_hash(key_hash: &str) -> Result<[u8; 32], ()> {
             break;
         }
         if j >= output.len() {
-            println!("Expected ], hash too long");
+            eprintln!("Expected ], hash too long");
             return Err(());
         }
         let dig1 = match hex_digit(key_hash[i]) {
             Ok(d) => d,
             Err(_) => {
-                println!("Expected hex digit or ]");
+                eprintln!("Expected hex digit or ]");
                 return Err(());
             }
         };
         i += 1;
         if i >= key_hash.len() {
-            println!("Expected ]");
+            eprintln!("Expected ]");
             return Err(());
         }
         if key_hash[i] == b']' {
@@ -254,7 +254,7 @@ pub fn parse_key_hash(key_hash: &str) -> Result<[u8; 32], ()> {
             let dig2 = match hex_digit(key_hash[i]) {
                 Ok(d) => d,
                 Err(_) => {
-                    println!("Expected hex digit, , or ]");
+                    eprintln!("Expected hex digit, , or ]");
                     return Err(());
                 }
             };
@@ -266,20 +266,20 @@ pub fn parse_key_hash(key_hash: &str) -> Result<[u8; 32], ()> {
             i += 1;
         }
         if i >= key_hash.len() {
-            println!("Expected ]");
+            eprintln!("Expected ]");
             return Err(());
         }
         if key_hash[i] == b']' {
             break;
         }
         if key_hash[i] != b',' {
-            println!("Expected , or ]");
+            eprintln!("Expected , or ]");
             return Err(());
         }
         i += 1;
     }
     if i >= key_hash.len() || key_hash[i] != b']' {
-        println!("Expected ]");
+        eprintln!("Expected ]");
         return Err(());
     }
     i += 1;
@@ -287,11 +287,11 @@ pub fn parse_key_hash(key_hash: &str) -> Result<[u8; 32], ()> {
         i += 1;
     }
     if i < key_hash.len() {
-        println!("Unexpected trailing characters");
+        eprintln!("Unexpected trailing characters");
         return Err(());
     }
     if j < output.len() {
-        println!("Hash too short");
+        eprintln!("Hash too short");
         return Err(());
     }
     Ok(output)
@@ -310,7 +310,7 @@ pub fn run_accept(opts: &opts::Opts, name: &str, key_hash: &str) -> ExitCode {
     match control.command_with_object(controlproto::Command::AcceptPairing, &pair_cmd) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send pairing request command to control socket");
+            eprintln!("Failed to send pairing request command to control socket");
             return ExitCode::from(1);
         }
     };
@@ -319,18 +319,18 @@ pub fn run_accept(opts: &opts::Opts, name: &str, key_hash: &str) -> ExitCode {
             Ok(match deserialize_from_slice::<PairResult>(buf) {
                 Ok(r) => r,
                 Err(_) => {
-                    println!("Failed to deserialize pairing response");
+                    eprintln!("Failed to deserialize pairing response");
                     return Err(());
                 }
             })
         } else {
-            println!("Pairing failed");
+            eprintln!("Pairing failed");
             Err(())
         }
     }) {
         Ok(opt) => opt,
         Err(_) => {
-            println!("Failed to receive pairing response from control socket");
+            eprintln!("Failed to receive pairing response from control socket");
             return ExitCode::from(1);
         }
     };
@@ -355,7 +355,7 @@ pub fn run_finish(opts: &opts::Opts, name: &str, key_hash: &str) -> ExitCode {
     match control.command_with_object(controlproto::Command::AcceptPairing, &pair_cmd) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send pairing request command to control socket");
+            eprintln!("Failed to send pairing request command to control socket");
             return ExitCode::from(1);
         }
     };
@@ -364,18 +364,18 @@ pub fn run_finish(opts: &opts::Opts, name: &str, key_hash: &str) -> ExitCode {
             Ok(match deserialize_from_slice::<PairResult>(buf) {
                 Ok(r) => r,
                 Err(_) => {
-                    println!("Failed to deserialize pairing response");
+                    eprintln!("Failed to deserialize pairing response");
                     return Err(());
                 }
             })
         } else {
-            println!("Pairing failed");
+            eprintln!("Pairing failed");
             Err(())
         }
     }) {
         Ok(opt) => opt,
         Err(_) => {
-            println!("Failed to receive pairing response from control socket");
+            eprintln!("Failed to receive pairing response from control socket");
             return ExitCode::from(1);
         }
     };

@@ -11,7 +11,7 @@ pub fn run_capture(opts: &opts::Opts, name: &str) -> ExitCode {
     match control.command(controlproto::Command::Capture) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send exit command to control socket");
+            eprintln!("Failed to send exit command to control socket");
             return ExitCode::from(1);
         }
     };
@@ -20,7 +20,7 @@ pub fn run_capture(opts: &opts::Opts, name: &str) -> ExitCode {
             let frame = match deserialize_from_slice::<ethernet::EthernetFrame>(buf) {
                 Ok(f) => f,
                 Err(_) => {
-                    println!("Failed to deserialize network frame");
+                    eprintln!("Failed to deserialize network frame");
                     return Err(());
                 }
             };

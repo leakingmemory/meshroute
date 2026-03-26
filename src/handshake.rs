@@ -40,7 +40,7 @@ pub fn encrypt(data: &[u8], pubkey: &[u8]) -> Result<Vec<u8>, ()> {
     let pubkey = match RsaPublicKey::from_pkcs1_der(pubkey) {
         Ok(k) => k,
         Err(_) => {
-            println!("Failed to read public key");
+            eprintln!("Failed to read public key");
             return Err(());
         }
     };
@@ -49,7 +49,7 @@ pub fn encrypt(data: &[u8], pubkey: &[u8]) -> Result<Vec<u8>, ()> {
     let encrypted = match encrypting_key.encrypt_with_rng(&mut rng, data) {
         Ok(e) => e,
         Err(_) => {
-            println!("Failed to encrypt data");
+            eprintln!("Failed to encrypt data");
             return Err(());
         }
     };
@@ -70,14 +70,14 @@ pub fn send_pubkeys(
         master_pubkey = match config.master_key {
             Some(ref master_key) => master_key.public_key.clone(),
             None => {
-                println!("Cannot handle connections without a master key");
+                eprintln!("Cannot handle connections without a master key");
                 return Err(());
             }
         };
         (node_pubkey, node_sig) = match config.node_key {
             Some(ref node_key) => (node_key.key.public_key.clone(), node_key.signature.clone()),
             None => {
-                println!("Cannot handle connections without a node key");
+                eprintln!("Cannot handle connections without a node key");
                 return Err(());
             }
         };
@@ -94,19 +94,19 @@ pub fn send_pubkeys(
     hdrbuf[12..16].copy_from_slice(&node_pubkey_size.to_be_bytes());
     hdrbuf[16..20].copy_from_slice(&node_sig_size.to_be_bytes());
     if let Err(_) = connection.write_all(&hdrbuf) {
-        println!("External connection write error, closing");
+        eprintln!("External connection write error, closing");
         return Err(());
     }
     if let Err(_) = connection.write_all(master_pubkey.as_slice()) {
-        println!("External connection write error, closing");
+        eprintln!("External connection write error, closing");
         return Err(());
     }
     if let Err(_) = connection.write_all(node_pubkey.as_slice()) {
-        println!("External connection write error, closing");
+        eprintln!("External connection write error, closing");
         return Err(());
     }
     if let Err(_) = connection.write_all(node_sig.as_slice()) {
-        println!("External connection write error, closing");
+        eprintln!("External connection write error, closing");
         return Err(());
     }
     Ok(())
@@ -128,7 +128,7 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys, ()> {
     {
         let mut hdrbuf = [0u8; 20];
         if let Err(_) = connection.read_exact(&mut hdrbuf) {
-            println!("Failed to read pubkey data header");
+            eprintln!("Failed to read pubkey data header");
             return Err(());
         }
         let mut u32buf = [0u8; 4];
@@ -146,11 +146,11 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys, ()> {
         u32buf.copy_from_slice(&hdrbuf[16..20]);
         let node_sig_size = u32::from_be_bytes(u32buf);
         if proto != 0x3E585E73 {
-            println!("Protocol error");
+            eprintln!("Protocol error");
             return Err(());
         }
         if master_pubkey_size > 65536 || node_pubkey_size > 65536 || node_sig_size > 65536 {
-            println!("Pubkey or signature sizes out of reasonable range");
+            eprintln!("Pubkey or signature sizes out of reasonable range");
             return Err(());
         }
         master_pubkey.resize(master_pubkey_size as usize, 0);
@@ -158,15 +158,15 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys, ()> {
         node_sig.resize(node_sig_size as usize, 0);
     }
     if let Err(_) = connection.read_exact(&mut master_pubkey) {
-        println!("Failed to read master pubkey");
+        eprintln!("Failed to read master pubkey");
         return Err(());
     }
     if let Err(_) = connection.read_exact(&mut node_pubkey) {
-        println!("Failed to read node pubkey");
+        eprintln!("Failed to read node pubkey");
         return Err(());
     }
     if let Err(_) = connection.read_exact(&mut node_sig) {
-        println!("Failed to read node signature");
+        eprintln!("Failed to read node signature");
         return Err(());
     }
 
@@ -174,14 +174,14 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys, ()> {
         let master_public_key = match RsaPublicKey::from_pkcs1_der(master_pubkey.as_slice()) {
             Ok(k) => k,
             Err(_) => {
-                println!("Failed to read master public key");
+                eprintln!("Failed to read master public key");
                 return Err(());
             }
         };
         let signature = match Signature::try_from(node_sig.as_slice()) {
             Ok(s) => s,
             Err(_) => {
-                println!("Failed to read node signature");
+                eprintln!("Failed to read node signature");
                 return Err(());
             }
         };
@@ -190,7 +190,7 @@ fn recv_pubkeys(connection: &mut TcpStream) -> Result<RecvProtoAndKeys, ()> {
         match verifying_key.verify(node_pubkey.as_slice(), &signature) {
             Ok(()) => {}
             Err(e) => {
-                println!("Signature verification failed: {:?}", e);
+                eprintln!("Signature verification failed: {:?}", e);
                 return Err(());
             }
         }
@@ -225,7 +225,7 @@ fn send_init(
     let pubkey = match RsaPublicKey::from_pkcs1_der(recv_pkeys.node_pubkey.as_slice()) {
         Ok(k) => k,
         Err(_) => {
-            println!("Failed to read public key");
+            eprintln!("Failed to read public key");
             return Err(());
         }
     };
@@ -242,7 +242,7 @@ fn send_init(
             keys = match generate_key_and_nonce(block_of_material.as_slice()) {
                 Ok(k) => k,
                 Err(_) => {
-                    println!("Failed to generate key and nonce");
+                    eprintln!("Failed to generate key and nonce");
                     return Err(());
                 }
             };
@@ -252,20 +252,20 @@ fn send_init(
                         match RsaPrivateKey::from_pkcs8_der(node_key.key.private_key.as_slice()) {
                             Ok(k) => k,
                             Err(_) => {
-                                println!("Failed to read private key");
+                                eprintln!("Failed to read private key");
                                 return Err(());
                             }
                         }
                     }
                     None => {
-                        println!("Cannot handle connections without a node key");
+                        eprintln!("Cannot handle connections without a node key");
                         return Err(());
                     }
                 };
                 init_block_signature = match sign(block_of_material.as_slice(), node_key) {
                     Ok(s) => s,
                     Err(_) => {
-                        println!("Failed to sign block of material");
+                        eprintln!("Failed to sign block of material");
                         return Err(());
                     }
                 };
@@ -276,7 +276,7 @@ fn send_init(
             ) {
                 Ok(e) => e,
                 Err(_) => {
-                    println!("Failed to encrypt block of material");
+                    eprintln!("Failed to encrypt block of material");
                     return Err(());
                 }
             };
@@ -289,19 +289,19 @@ fn send_init(
         match keys.encrypt(&mut init_block_signature) {
             Ok(_) => {}
             Err(_) => {
-                println!("Failed to encrypt init block signature");
+                eprintln!("Failed to encrypt init block signature");
                 return Err(());
             }
         }
         init_block[0..8].copy_from_slice(&len.to_be_bytes());
         init_block[8..16].copy_from_slice(&init_block_signature.len().to_be_bytes());
         if let Err(_) = connection.write_all(init_block.as_slice()) {
-            println!("External connection write error, closing");
+            eprintln!("External connection write error, closing");
             return Err(());
         }
     }
     if let Err(_) = connection.write_all(init_block_signature.as_slice()) {
-        println!("External connection write error, closing");
+        eprintln!("External connection write error, closing");
         return Err(());
     }
     Ok(keys)
@@ -317,7 +317,7 @@ fn recv_init(
     {
         block_of_material_buf.resize(16, 0);
         if let Err(_) = connection.read_exact(block_of_material_buf.as_mut_slice()) {
-            println!("External connection read error, closing");
+            eprintln!("External connection read error, closing");
             return Err(());
         }
         let mut u64buf = [0u8; 8];
@@ -329,7 +329,7 @@ fn recv_init(
         match connection.read_exact(block_of_material_buf.as_mut_slice()) {
             Ok(_) => {}
             Err(_) => {
-                println!("External connection read error, closing");
+                eprintln!("External connection read error, closing");
                 return Err(());
             }
         }
@@ -339,13 +339,13 @@ fn recv_init(
             match RsaPrivateKey::from_pkcs8_der(node_key.key.private_key.as_slice()) {
                 Ok(k) => k,
                 Err(_) => {
-                    println!("Failed to read private key");
+                    eprintln!("Failed to read private key");
                     return Err(());
                 }
             }
         }
         None => {
-            println!("Cannot handle connections without a node key");
+            eprintln!("Cannot handle connections without a node key");
             return Err(());
         }
     };
@@ -354,14 +354,14 @@ fn recv_init(
         match decryption_key.decrypt(&block_of_material_buf[0..block_of_material_len]) {
             Ok(b) => b,
             Err(_) => {
-                println!("Failed to decrypt block of material");
+                eprintln!("Failed to decrypt block of material");
                 return Err(());
             }
         };
     let mut keys = match generate_key_and_nonce(block_of_material.as_slice()) {
         Ok(k) => k,
         Err(_) => {
-            println!("Failed to generate key and nonce");
+            eprintln!("Failed to generate key and nonce");
             return Err(());
         }
     };
@@ -373,14 +373,14 @@ fn recv_init(
     match keys.decrypt(&mut signature) {
         Ok(_) => {}
         Err(_) => {
-            println!("Failed to decrypt signature");
+            eprintln!("Failed to decrypt signature");
             return Err(());
         }
     };
     let verification_key = match RsaPublicKey::from_pkcs1_der(recv_pkeys.node_pubkey.as_slice()) {
         Ok(k) => k,
         Err(_) => {
-            println!("Failed to read public key");
+            eprintln!("Failed to read public key");
             return Err(());
         }
     };
@@ -391,7 +391,7 @@ fn recv_init(
     ) {
         Ok(_) => {}
         Err(_) => {
-            println!("Signature verification failed");
+            eprintln!("Signature verification failed");
             return Err(());
         }
     }
@@ -425,7 +425,7 @@ pub fn run_server_handshake(
     if recv_pkeys.version_major < SERVER_VERSION_MIN
         || recv_pkeys.version_major > SERVER_VERSION_MAX
     {
-        println!(
+        eprintln!(
             "Protocol major version is out of acceptable range {}-{}: {}",
             SERVER_VERSION_MIN, SERVER_VERSION_MAX, recv_pkeys.version_major
         );
@@ -434,7 +434,7 @@ pub fn run_server_handshake(
     for minor_min in SERVER_MINOR_VERSION_MIN {
         if recv_pkeys.version_major == minor_min.0 {
             if recv_pkeys.version_minor < minor_min.1 {
-                println!(
+                eprintln!(
                     "Protocol minor version is out of acceptable range {}-: {}",
                     minor_min.1, recv_pkeys.version_minor
                 );
@@ -445,7 +445,7 @@ pub fn run_server_handshake(
     for minor_max in SERVER_MINOR_VERSION_MAX {
         if recv_pkeys.version_major == minor_max.0 {
             if recv_pkeys.version_minor > minor_max.1 {
-                println!(
+                eprintln!(
                     "Protocol minor version is out of acceptable range -{}: {}",
                     minor_max.1, recv_pkeys.version_minor
                 );
@@ -485,7 +485,7 @@ pub fn run_client_handshake(
     if recv_pkeys.version_major < CLIENT_VERSION_MIN
         || recv_pkeys.version_major > CLIENT_VERSION_MAX
     {
-        println!(
+        eprintln!(
             "Protocol major version is out of acceptable range {}-{}: {}",
             CLIENT_VERSION_MIN, CLIENT_VERSION_MAX, recv_pkeys.version_major
         );
@@ -494,7 +494,7 @@ pub fn run_client_handshake(
     for minor_min in CLIENT_MINOR_VERSION_MIN {
         if recv_pkeys.version_major == minor_min.0 {
             if recv_pkeys.version_minor < minor_min.1 {
-                println!(
+                eprintln!(
                     "Protocol minor version is out of acceptable range {}-: {}",
                     minor_min.1, recv_pkeys.version_minor
                 );
@@ -505,7 +505,7 @@ pub fn run_client_handshake(
     for minor_max in SERVER_MINOR_VERSION_MAX {
         if recv_pkeys.version_major == minor_max.0 {
             if recv_pkeys.version_minor > minor_max.1 {
-                println!(
+                eprintln!(
                     "Protocol minor version is out of acceptable range -{}: {}, downgrading to {}",
                     minor_max.1, recv_pkeys.version_minor, minor_max.1
                 );

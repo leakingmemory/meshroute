@@ -73,7 +73,7 @@ impl ConfigBase {
                 if err.kind() == ErrorKind::NotFound {
                     return Ok(None);
                 }
-                println!("Error reading config file: {}", err);
+                eprintln!("Error reading config file: {}", err);
                 return Err(());
             }
         };
@@ -88,12 +88,12 @@ impl ConfigBase {
             Ok(_) => match fs::rename(tmp_filename, filename) {
                 Ok(_) => Ok(()),
                 Err(err) => {
-                    println!("Error renaming config file: {}", err);
+                    eprintln!("Error renaming config file: {}", err);
                     Err(())
                 }
             },
             Err(err) => {
-                println!("Error writing config file: {}", err);
+                eprintln!("Error writing config file: {}", err);
                 Err(())
             }
         };
@@ -137,7 +137,7 @@ impl Config {
             Some(r) => match keyex::RsaKeyPair::deserialize(r.data.as_slice()) {
                 Ok(k) => Some(k),
                 Err(_) => {
-                    println!("Failed to deserialize master key, ignoring");
+                    eprintln!("Failed to deserialize master key, ignoring");
                     return Err(());
                 }
             },
@@ -148,7 +148,7 @@ impl Config {
             Some(r) => match keyex::NodeKey::deserialize(r.data.as_slice()) {
                 Ok(k) => Some(k),
                 Err(_) => {
-                    println!("Failed to deserialize node key, ignoring");
+                    eprintln!("Failed to deserialize node key, ignoring");
                     return Err(());
                 }
             },
@@ -166,7 +166,7 @@ impl Config {
                 |r| match deserialize_from_slice::<PairingRequest>(r.data.as_slice()) {
                     Ok(p) => Some(p),
                     Err(_) => {
-                        println!("Failed to deserialize pairing request {}, ignoring", r.name);
+                        eprintln!("Failed to deserialize pairing request {}, ignoring", r.name);
                         None
                     }
                 },
@@ -188,7 +188,7 @@ impl Config {
                 |r| match deserialize_from_slice::<PairedEndpoint>(r.data.as_slice()) {
                     Ok(p) => Some(p),
                     Err(_) => {
-                        println!("Failed to deserialize paired endpoint {}, ignoring", r.name);
+                        eprintln!("Failed to deserialize paired endpoint {}, ignoring", r.name);
                         None
                     }
                 },
@@ -209,7 +209,7 @@ impl Config {
                 |r| match deserialize_from_slice::<EndpointLink>(r.data.as_slice()) {
                     Ok(l) => Some(l),
                     Err(_) => {
-                        println!("Failed to deserialize link");
+                        eprintln!("Failed to deserialize link");
                         None
                     }
                 },
@@ -235,7 +235,7 @@ impl Config {
             let master_key_data = match master_key.serialize() {
                 Ok(d) => d,
                 Err(_) => {
-                    println!("Failed to serialize master key");
+                    eprintln!("Failed to serialize master key");
                     return Err(());
                 }
             };
@@ -248,7 +248,7 @@ impl Config {
             let node_key_data = match node_key.serialize() {
                 Ok(d) => d,
                 Err(_) => {
-                    println!("Failed to serialize node key");
+                    eprintln!("Failed to serialize node key");
                     return Err(());
                 }
             };
@@ -271,7 +271,7 @@ impl Config {
             let pairing_request_data = match serialize_to_vec(pairing_request) {
                 Ok(d) => d,
                 Err(_) => {
-                    println!(
+                    eprintln!(
                         "Failed to serialize pairing request {}",
                         pairing_request.name
                     );
@@ -287,7 +287,7 @@ impl Config {
             let pairing_request_data = match serialize_to_vec(paired_endpoint) {
                 Ok(d) => d,
                 Err(_) => {
-                    println!(
+                    eprintln!(
                         "Failed to serialize pairing request {}",
                         paired_endpoint.name
                     );
@@ -303,7 +303,7 @@ impl Config {
             let link_data = match serialize_to_vec(&EndpointLink { name: link.clone() }) {
                 Ok(d) => d,
                 Err(_) => {
-                    println!("Failed to serialize link object {}", link);
+                    eprintln!("Failed to serialize link object {}", link);
                     return Err(());
                 }
             };

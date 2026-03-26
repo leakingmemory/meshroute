@@ -14,7 +14,7 @@ pub fn run_ping(opts: &opts::Opts, name: &str) -> ExitCode {
     match control.command(controlproto::Command::Exit) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send exit command to control socket");
+            eprintln!("Failed to send exit command to control socket");
             return ExitCode::from(1);
         }
     };

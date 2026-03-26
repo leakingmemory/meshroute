@@ -66,11 +66,11 @@ fn write_control(
     };
     let hdr = hdr.to_bytes();
     if let Err(_) = stream.write_all(&hdr) {
-        println!("Failed to write control message header");
+        eprintln!("Failed to write control message header");
         return Err(());
     }
     if let Err(_) = stream.write_all(buf.as_slice()) {
-        println!("Failed to write control message data");
+        eprintln!("Failed to write control message data");
         return Err(());
     }
     Ok(())
@@ -87,7 +87,7 @@ where
     let buf = match serialize_to_vec(obj) {
         Ok(v) => v,
         Err(_) => {
-            println!("Failed to serialize control message object");
+            eprintln!("Failed to serialize control message object");
             return Err(());
         }
     };
@@ -99,29 +99,29 @@ where
     let hdrlen = match stream.write(&hdr) {
         Ok(len) => len,
         Err(_) => {
-            println!("Failed to write control message header");
+            eprintln!("Failed to write control message header");
             return Err(());
         }
     };
     if hdrlen != hdr.len() {
-        println!("Failed to write control message header: short write");
+        eprintln!("Failed to write control message header: short write");
         return Err(());
     }
     let msglen = match stream.write(buf.as_slice()) {
         Ok(len) => len,
         Err(_) => {
-            println!("Failed to write control message data");
+            eprintln!("Failed to write control message data");
             return Err(());
         }
     };
     if msglen != buf.len() {
-        println!("Failed to write control message data: short write");
+        eprintln!("Failed to write control message data: short write");
         return Err(());
     }
     match stream.flush() {
         Ok(_) => Ok(()),
         Err(_) => {
-            println!("Failed to write control message data: flush failed");
+            eprintln!("Failed to write control message data: flush failed");
             return Err(());
         }
     }
@@ -143,7 +143,7 @@ fn handle_control(
     let msg = match serialize_to_vec(&greeting) {
         Ok(msg) => msg,
         Err(_) => {
-            println!("Failed to serialize greeting for control protocol");
+            eprintln!("Failed to serialize greeting for control protocol");
             return;
         }
     };
@@ -151,14 +151,14 @@ fn handle_control(
     match stream.write(len.as_slice()) {
         Ok(_) => {}
         Err(_) => {
-            println!("Failed to write length for control protocol");
+            eprintln!("Failed to write length for control protocol");
             return;
         }
     }
     match stream.write(msg.as_slice()) {
         Ok(_) => {}
         Err(_) => {
-            println!("Failed to write greeting for control protocol");
+            eprintln!("Failed to write greeting for control protocol");
             return;
         }
     }
@@ -167,7 +167,7 @@ fn handle_control(
         match stream.read_exact(&mut cmdbuf) {
             Ok(_) => {}
             Err(_) => {
-                println!("Failed to read cmd for control protocol");
+                eprintln!("Failed to read cmd for control protocol");
                 return;
             }
         }
@@ -195,13 +195,13 @@ fn handle_control(
                 {
                     Ok(l) => l,
                     Err(_) => {
-                        println!("Failed to read listen object");
+                        eprintln!("Failed to read listen object");
                         return;
                     }
                 };
                 let mut config = config.lock().unwrap();
                 if !listen_ctrl.listen.is_empty() {
-                    println!(
+                    eprintln!(
                         "Changing listening setting from {} to {}",
                         if let Some(ref listen) = config.listen {
                             listen.as_str()
@@ -212,7 +212,7 @@ fn handle_control(
                     );
                     config.listen = Some(listen_ctrl.listen);
                 } else {
-                    println!(
+                    eprintln!(
                         "Changing listening setting from {} to None",
                         if let Some(ref listen) = config.listen {
                             listen.as_str()
@@ -225,7 +225,7 @@ fn handle_control(
                 match config.save(config_file_name) {
                     Ok(_) => {}
                     Err(_) => {
-                        println!("Failed to save new config");
+                        eprintln!("Failed to save new config");
                         return;
                     }
                 }
@@ -235,19 +235,19 @@ fn handle_control(
                 let pair_ctrl = match read_control_object::<controlproto::PairCmd>(&mut stream) {
                     Ok(l) => l,
                     Err(_) => {
-                        println!("Failed to read pair object");
+                        eprintln!("Failed to read pair object");
                         return;
                     }
                 };
                 let mut connection = match TcpStream::connect(pair_ctrl.addr.as_str()) {
                     Ok(c) => c,
                     Err(_) => {
-                        println!("Failed to connect to {} for pairing.", pair_ctrl.addr);
+                        eprintln!("Failed to connect to {} for pairing.", pair_ctrl.addr);
                         match write_control(&mut stream, controlproto::ControlMsgType::GenericError)
                         {
                             Ok(_) => {}
                             Err(_) => {
-                                println!("Failed to write control response");
+                                eprintln!("Failed to write control response");
                                 return;
                             }
                         };
@@ -258,14 +258,14 @@ fn handle_control(
                     match handshake::run_client_handshake(&mut connection, &config) {
                         Ok(sec) => sec,
                         Err(_) => {
-                            println!("Failed to shake hands with {} for pairing.", pair_ctrl.addr);
+                            eprintln!("Failed to shake hands with {} for pairing.", pair_ctrl.addr);
                             match write_control(
                                 &mut stream,
                                 controlproto::ControlMsgType::GenericError,
                             ) {
                                 Ok(_) => {}
                                 Err(_) => {
-                                    println!("Failed to write control response");
+                                    eprintln!("Failed to write control response");
                                     return;
                                 }
                             };
@@ -279,19 +279,19 @@ fn handle_control(
                 let pairing_request = match serialize_to_vec(&pairing_request) {
                     Ok(p) => p,
                     Err(_) => {
-                        println!("Failed to serialize pairing request");
+                        eprintln!("Failed to serialize pairing request");
                         return;
                     }
                 };
                 match endpoint.send(EndpointMessage::PairingRequest, pairing_request.as_slice()) {
                     Ok(_) => {}
                     Err(_) => {
-                        println!("Failed to send pairing request to {}", pair_ctrl.addr);
+                        eprintln!("Failed to send pairing request to {}", pair_ctrl.addr);
                         match write_control(&mut stream, controlproto::ControlMsgType::GenericError)
                         {
                             Ok(_) => {}
                             Err(_) => {
-                                println!("Failed to write control response");
+                                eprintln!("Failed to write control response");
                                 return;
                             }
                         };
@@ -302,12 +302,12 @@ fn handle_control(
                 let response = match endpoint.recv(&mut response_buf) {
                     Ok(r) => r,
                     Err(_) => {
-                        println!("Failed to receive pairing response from {}", pair_ctrl.addr);
+                        eprintln!("Failed to receive pairing response from {}", pair_ctrl.addr);
                         match write_control(&mut stream, controlproto::ControlMsgType::GenericError)
                         {
                             Ok(_) => {}
                             Err(_) => {
-                                println!("Failed to write control response");
+                                eprintln!("Failed to write control response");
                                 return;
                             }
                         };
@@ -321,7 +321,7 @@ fn handle_control(
                         ) {
                             Ok(p) => p,
                             Err(_) => {
-                                println!("Failed to deserialize pairing response");
+                                eprintln!("Failed to deserialize pairing response");
                                 return;
                             }
                         };
@@ -367,7 +367,7 @@ fn handle_control(
                             match config.save(config_file_name) {
                                 Ok(_) => {}
                                 Err(_) => {
-                                    println!("Failed to save config with pairing request");
+                                    eprintln!("Failed to save config with pairing request");
                                     return;
                                 }
                             };
@@ -384,7 +384,7 @@ fn handle_control(
                         ) {
                             Ok(_) => {}
                             Err(_) => {
-                                println!("Failed to write control response");
+                                eprintln!("Failed to write control response");
                                 return;
                             }
                         };
@@ -392,12 +392,12 @@ fn handle_control(
                         return;
                     }
                     _ => {
-                        println!("Unexpected pairing response from {}", pair_ctrl.addr);
+                        eprintln!("Unexpected pairing response from {}", pair_ctrl.addr);
                         match write_control(&mut stream, controlproto::ControlMsgType::GenericError)
                         {
                             Ok(_) => {}
                             Err(_) => {
-                                println!("Failed to write control response");
+                                eprintln!("Failed to write control response");
                                 return;
                             }
                         };
@@ -431,7 +431,7 @@ fn handle_control(
                 ) {
                     Ok(_) => {}
                     Err(_) => {
-                        println!("Failed to write control response");
+                        eprintln!("Failed to write control response");
                         return;
                     }
                 };
@@ -457,7 +457,7 @@ fn handle_control(
                 ) {
                     Ok(_) => {}
                     Err(_) => {
-                        println!("Failed to write control response");
+                        eprintln!("Failed to write control response");
                         return;
                     }
                 };
@@ -468,7 +468,7 @@ fn handle_control(
                     match read_control_object::<controlproto::AcceptPairingCmd>(&mut stream) {
                         Ok(l) => l,
                         Err(_) => {
-                            println!("Failed to read pair object");
+                            eprintln!("Failed to read pair object");
                             return;
                         }
                     };
@@ -513,7 +513,7 @@ fn handle_control(
                         match config.save(config_file_name) {
                             Ok(_) => {}
                             Err(_) => {
-                                println!("Failed to save config with pairing request");
+                                eprintln!("Failed to save config with pairing request");
                                 return;
                             }
                         };
@@ -535,7 +535,7 @@ fn handle_control(
                     ) {
                         Ok(_) => {}
                         Err(_) => {
-                            println!("Failed to write control response");
+                            eprintln!("Failed to write control response");
                             return;
                         }
                     };
@@ -576,7 +576,7 @@ fn handle_control(
                 ) {
                     Ok(_) => {}
                     Err(_) => {
-                        println!("Failed to write control response");
+                        eprintln!("Failed to write control response");
                         return;
                     }
                 };
@@ -597,7 +597,7 @@ fn handle_control(
                 ) {
                     Ok(_) => {}
                     Err(_) => {
-                        println!("Failed to write control response");
+                        eprintln!("Failed to write control response");
                         return;
                     }
                 };
@@ -606,7 +606,7 @@ fn handle_control(
                 let add_link = match read_control_object::<controlproto::LinkCmd>(&mut stream) {
                     Ok(a) => a,
                     Err(_) => {
-                        println!("Failed to read control object for request add-link");
+                        eprintln!("Failed to read control object for request add-link");
                         return;
                     }
                 };
@@ -619,7 +619,7 @@ fn handle_control(
                     match config.save(config_file_name) {
                         Ok(_) => {}
                         Err(_) => {
-                            println!("Failed to save config");
+                            eprintln!("Failed to save config");
                             return;
                         }
                     }
@@ -627,7 +627,7 @@ fn handle_control(
                 match write_control(&mut stream, controlproto::ControlMsgType::GenericOk) {
                     Ok(_) => {}
                     Err(_) => {
-                        println!("Failed to write control response");
+                        eprintln!("Failed to write control response");
                         return;
                     }
                 };
@@ -638,7 +638,7 @@ fn handle_control(
                 let add_link = match read_control_object::<controlproto::LinkCmd>(&mut stream) {
                     Ok(a) => a,
                     Err(_) => {
-                        println!("Failed to read control object for request add-link");
+                        eprintln!("Failed to read control object for request add-link");
                         return;
                     }
                 };
@@ -650,7 +650,7 @@ fn handle_control(
                     match config.save(config_file_name) {
                         Ok(_) => {}
                         Err(_) => {
-                            println!("Failed to save config");
+                            eprintln!("Failed to save config");
                             return;
                         }
                     }
@@ -658,7 +658,7 @@ fn handle_control(
                 match write_control(&mut stream, controlproto::ControlMsgType::GenericOk) {
                     Ok(_) => {}
                     Err(_) => {
-                        println!("Failed to write control response");
+                        eprintln!("Failed to write control response");
                         return;
                     }
                 };
@@ -666,7 +666,7 @@ fn handle_control(
                 return;
             }
             _ => {
-                println!("Unknown command: {}", cmd);
+                eprintln!("Unknown command: {}", cmd);
                 return;
             }
         };
@@ -758,7 +758,7 @@ pub fn handle_ethernet_frame(ctx: &mut EthernetHandlerCtx) -> Result<(), ()> {
             Ok(())
         }
         Err(_) => {
-            println!("Failed to serialize ethernet frame event");
+            eprintln!("Failed to serialize ethernet frame event");
             Err(())
         }
     }
@@ -766,7 +766,7 @@ pub fn handle_ethernet_frame(ctx: &mut EthernetHandlerCtx) -> Result<(), ()> {
 
 pub fn handle_ethernet(ctx: &mut EthernetHandlerCtx, data: &[u8]) -> Result<(), ()> {
     if data.len() < 18 {
-        println!("Invalid ethernet frame: too short");
+        eprintln!("Invalid ethernet frame: too short");
         return Ok(());
     }
     for i in 0..6 {
@@ -804,20 +804,20 @@ pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCt
         {
             let mut hdrbuf = [0u8; 6];
             if let Err(_) = event_reader.read_exact(&mut hdrbuf) {
-                println!("Failed to read event header");
+                eprintln!("Failed to read event header");
                 return;
             }
             hdr = match eventproto::EventHeader::from_bytes(&hdrbuf) {
                 Ok(hdr) => hdr,
                 Err(_) => {
-                    println!("Failed to deserialize event header");
+                    eprintln!("Failed to deserialize event header");
                     return;
                 }
             };
         }
         event_buf.resize(hdr.data_len as usize, 0);
         if let Err(_) = event_reader.read_exact(&mut event_buf) {
-            println!("Failed to read event data");
+            eprintln!("Failed to read event data");
             return;
         }
         let mut ctx = ctx.lock().unwrap();
@@ -833,14 +833,14 @@ pub fn event_handler(mut event_reader: PipeReader, ctx: Arc<Mutex<EventHandlerCt
                         let _hdrlen = match stream.write_all(&hdr) {
                             Ok(_) => hdr.len(),
                             Err(_) => {
-                                println!("Failed to write control message header");
+                                eprintln!("Failed to write control message header");
                                 return false;
                             }
                         };
                         let _msglen = match stream.write_all(event_buf.as_slice()) {
                             Ok(_) => event_buf.len(),
                             Err(_) => {
-                                println!("Failed to write control message data");
+                                eprintln!("Failed to write control message data");
                                 return false;
                             }
                         };
@@ -901,12 +901,12 @@ impl WorkerContext {
                 .as_slice()
                 .to_vec();
         }
-        println!("Network worker process initializing");
+        eprintln!("Network worker process initializing");
         let mut handlerctx = EthernetHandlerCtx::new(
             match self.event_writer.try_clone() {
                 Ok(pw) => pw,
                 Err(_) => {
-                    println!("Failed to clone event writer");
+                    eprintln!("Failed to clone event writer");
                     return 1;
                 }
             },
@@ -916,11 +916,11 @@ impl WorkerContext {
         );
         let tap_dev = Arc::new(Mutex::new(self.tap_dev.clone()));
         if let Some(listen_addr) = listen_addr {
-            println!("Listening on tcp {}", listen_addr);
+            eprintln!("Listening on tcp {}", listen_addr);
             let listen_socket = match TcpListener::bind(listen_addr.as_str()) {
                 Ok(s) => Some(s),
                 Err(_) => {
-                    println!("Failed to start listening socket {}", listen_addr);
+                    eprintln!("Failed to start listening socket {}", listen_addr);
                     None
                 }
             };
@@ -941,7 +941,7 @@ impl WorkerContext {
                         let mut connection = match connection {
                             Ok(c) => c,
                             Err(_) => {
-                                println!("Handling connection listening failed");
+                                eprintln!("Handling connection listening failed");
                                 break;
                             }
                         };
@@ -1008,7 +1008,7 @@ impl WorkerContext {
                                         ) {
                                             Ok(r) => r,
                                             Err(_) => {
-                                                println!("Failed to deserialize pairing request");
+                                                eprintln!("Failed to deserialize pairing request");
                                                 return;
                                             }
                                         };
@@ -1055,7 +1055,7 @@ impl WorkerContext {
                                             match config.save(config_filename.as_str()) {
                                                 Ok(_) => {}
                                                 Err(_) => {
-                                                    println!(
+                                                    eprintln!(
                                                         "Failed to save config with pairing request"
                                                     );
                                                     return;
@@ -1069,7 +1069,7 @@ impl WorkerContext {
                                         {
                                             Ok(p) => p,
                                             Err(_) => {
-                                                println!("Failed to serialize pairing response");
+                                                eprintln!("Failed to serialize pairing response");
                                                 return;
                                             }
                                         };
@@ -1079,18 +1079,18 @@ impl WorkerContext {
                                         ) {
                                             Ok(_) => {}
                                             Err(_) => {
-                                                println!("Failed to send pairing response");
+                                                eprintln!("Failed to send pairing response");
                                                 return;
                                             }
                                         }
-                                        println!(
+                                        eprintln!(
                                             "Stopping network worker process and equesting restart"
                                         );
                                         let buf = [1u8];
                                         match restart_me_writer.write(&buf) {
                                             Ok(_) => {}
                                             Err(_) => {
-                                                println!("Failed to write to restart pipe");
+                                                eprintln!("Failed to write to restart pipe");
                                             }
                                         }
                                         std::process::exit(0);
@@ -1110,7 +1110,7 @@ impl WorkerContext {
                                             );
                                             println!("Uplink closed for {}", endpoint_name);
                                         } else {
-                                            println!("Uplink rejected");
+                                            eprintln!("Uplink rejected");
                                             endpoint
                                                 .send(EndpointMessage::GenericError, b"")
                                                 .unwrap();
@@ -1118,11 +1118,11 @@ impl WorkerContext {
                                         break;
                                     }
                                     EndpointMessage::PairingResponse => {
-                                        println!("Unexpected pairing response received");
+                                        eprintln!("Unexpected pairing response received");
                                         break;
                                     }
                                     EndpointMessage::GenericError => {
-                                        println!(
+                                        eprintln!(
                                             "Endpoint {} returned generic error",
                                             match &endpoint.name {
                                                 Some(name) => name.as_str(),
@@ -1163,9 +1163,9 @@ impl WorkerContext {
                     let mut connection = match TcpStream::connect(link_from_config.as_str()) {
                         Ok(c) => c,
                         Err(_) => {
-                            println!("Failed to connect to {}", link_from_config);
+                            eprintln!("Failed to connect to {}", link_from_config);
                             thread::sleep(Duration::from_secs(1));
-                            println!("Reconnecting after 10 seconds..");
+                            eprintln!("Reconnecting after 10 seconds..");
                             thread::sleep(Duration::from_secs(9));
                             continue;
                         }
@@ -1174,9 +1174,9 @@ impl WorkerContext {
                         match handshake::run_client_handshake(&mut connection, &config) {
                             Ok(sec) => sec,
                             Err(_) => {
-                                println!("Handshake failed with {}", link_from_config);
+                                eprintln!("Handshake failed with {}", link_from_config);
                                 thread::sleep(Duration::from_secs(1));
-                                println!("Reconnecting after 10 seconds..");
+                                eprintln!("Reconnecting after 10 seconds..");
                                 thread::sleep(Duration::from_secs(9));
                                 continue;
                             }
@@ -1185,9 +1185,9 @@ impl WorkerContext {
                     match endpoint.send(EndpointMessage::Uplink, b"") {
                         Ok(_) => {}
                         Err(_) => {
-                            println!("Failed to send uplink message to {}", link_from_config);
+                            eprintln!("Failed to send uplink message to {}", link_from_config);
                             thread::sleep(Duration::from_secs(1));
-                            println!("Reconnecting after 10 seconds..");
+                            eprintln!("Reconnecting after 10 seconds..");
                             thread::sleep(Duration::from_secs(9));
                             continue;
                         }
@@ -1201,9 +1201,9 @@ impl WorkerContext {
                         &mut endpoint,
                         serial.clone(),
                     );
-                    println!("Lost connection {}", link_from_config);
+                    eprintln!("Lost connection {}", link_from_config);
                     thread::sleep(Duration::from_secs(1));
-                    println!("Reconnecting after 10 seconds..");
+                    eprintln!("Reconnecting after 10 seconds..");
                     thread::sleep(Duration::from_secs(9));
                 }
             });
@@ -1215,7 +1215,7 @@ impl WorkerContext {
                 let size = match self.tap_dev.read(pktbuf.as_mut_slice()) {
                     Ok(size) => size,
                     Err(_) => {
-                        println!("Failed to read from tap device");
+                        eprintln!("Failed to read from tap device");
                         return 1;
                     }
                 };
@@ -1224,7 +1224,7 @@ impl WorkerContext {
             match handle_ethernet(&mut handlerctx, pktbuf.as_slice()) {
                 Ok(_) => {}
                 Err(_) => {
-                    println!("Failed to handle ethernet frame");
+                    eprintln!("Failed to handle ethernet frame");
                     return 1;
                 }
             }
@@ -1248,39 +1248,39 @@ impl WorkerContextThreadSafe {
         }
         let mut forkedworker = self.forkedworker.lock().unwrap().take();
         if let Some(_forkedworker) = forkedworker.take() {
-            println!("Stopping network worker process");
+            eprintln!("Stopping network worker process");
         }
-        println!("Starting network worker process");
+        eprintln!("Starting network worker process");
         let pid = unsafe { libc::fork() };
         if pid < 0 {
-            println!("Failed to fork worker process");
+            eprintln!("Failed to fork worker process");
             return;
         } else if pid == 0 {
-            println!("Spawned as child process");
+            eprintln!("Spawned as child process");
             ctx.run_worker();
             std::process::exit(0);
         }
-        println!("Network worker process spawned {}", pid);
+        eprintln!("Network worker process spawned {}", pid);
         let forkedworker = ForkedWorker::new_from_pid(pid);
         let mut fw = self.forkedworker.lock().unwrap();
         if fw.is_none() {
             fw.replace(forkedworker);
         } else {
-            println!("Stopping worker due to simultaneous start");
+            eprintln!("Stopping worker due to simultaneous start");
         }
-        println!("Network worker process spawned");
+        eprintln!("Network worker process spawned");
     }
     pub fn restart_me(&self) {
         let mut forkedworker = self.forkedworker.lock().unwrap().take();
         if let Some(_forkedworker) = forkedworker.take() {
-            println!("Stopping network worker process");
+            eprintln!("Stopping network worker process");
         }
-        println!("Requesting restart");
+        eprintln!("Requesting restart");
         let buf = [1u8];
         match self.restart_me_writer.lock().unwrap().write(&buf) {
             Ok(_) => {}
             Err(_) => {
-                println!("Failed to write to restart pipe");
+                eprintln!("Failed to write to restart pipe");
             }
         }
         std::process::exit(0);
@@ -1294,23 +1294,23 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
         (restart_me_reader, restart_me_writer) = match pipe() {
             Ok(endpoints) => endpoints,
             Err(_) => {
-                println!("Failed to create pipe for event channel");
+                eprintln!("Failed to create pipe for event channel");
                 return ExitCode::from(1);
             }
         };
         let pid = unsafe { libc::fork() };
         if pid < 0 {
-            println!("Failed to fork daemon process");
+            eprintln!("Failed to fork daemon process");
             return run_daemon_w(&mut restart_me_writer, opts, name);
         } else if pid == 0 {
-            println!("Spawned as child process");
+            eprintln!("Spawned as child process");
             return run_daemon_w(&mut restart_me_writer, opts, name);
         } else {
             let mut buf = [0u8; 1];
             let rd = match restart_me_reader.read(&mut buf) {
                 Ok(s) => s,
                 Err(_) => {
-                    println!("Failed to read from restart pipe");
+                    eprintln!("Failed to read from restart pipe");
                     unsafe {
                         libc::kill(pid, libc::SIGTERM);
                     }
@@ -1321,7 +1321,7 @@ pub fn run_daemon(opts: &opts::Opts, name: &str) -> ExitCode {
                 }
             };
             if rd == 0 {
-                println!("No restart requested");
+                eprintln!("No restart requested");
                 unsafe {
                     libc::kill(pid, libc::SIGTERM);
                 }
@@ -1356,13 +1356,13 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
     let mut lock_file_name = socket_file_name.clone();
     socket_file_name.insert_str(socket_file_name.len(), ".socket");
     lock_file_name.insert_str(lock_file_name.len(), ".lock");
-    println!("config file: {}", config_file_name);
-    println!("socket file: {}", socket_file_name);
-    println!("lock file: {}", lock_file_name);
+    eprintln!("config file: {}", config_file_name);
+    eprintln!("socket file: {}", socket_file_name);
+    eprintln!("lock file: {}", lock_file_name);
     let socket_dir = std::path::Path::new(&lock_file_name).parent().unwrap();
     if !socket_dir.exists() {
         if let Err(_) = std::fs::create_dir_all(socket_dir) {
-            println!(
+            eprintln!(
                 "failed to create directory for socket and lock files: {}",
                 socket_dir.display()
             );
@@ -1372,14 +1372,14 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
     let file = match std::fs::File::create(lock_file_name.clone()) {
         Ok(f) => f,
         Err(_) => {
-            println!("failed to open or create lock file: {}", lock_file_name);
+            eprintln!("failed to open or create lock file: {}", lock_file_name);
             return ExitCode::from(1);
         }
     };
     match file.try_lock() {
         Ok(_) => {}
         Err(_) => {
-            println!("failed to lock lock file: {}", lock_file_name);
+            eprintln!("failed to lock lock file: {}", lock_file_name);
             return ExitCode::from(1);
         }
     }
@@ -1392,13 +1392,13 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
     {
         let mut config = config.lock().unwrap();
         if config.master_key.is_none() {
-            println!("Generating master key for this node");
+            eprintln!("Generating master key for this node");
             let mut rnd = rsa::rand_core::OsRng;
             let bits = 4096;
             let priv_key = match RsaPrivateKey::new(&mut rnd, bits) {
                 Ok(k) => k,
                 Err(_) => {
-                    println!("Failed to generate master key");
+                    eprintln!("Failed to generate master key");
                     return ExitCode::from(1);
                 }
             };
@@ -1406,14 +1406,14 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
             let priv_key_der = match priv_key.to_pkcs8_der() {
                 Ok(d) => d,
                 Err(_) => {
-                    println!("Failed to serialize master key as der");
+                    eprintln!("Failed to serialize master key as der");
                     return ExitCode::from(1);
                 }
             };
             let pub_key_der = match pub_key.to_pkcs1_der() {
                 Ok(d) => d,
                 Err(_) => {
-                    println!("Failed to serialize master key (public part) as der");
+                    eprintln!("Failed to serialize master key (public part) as der");
                     return ExitCode::from(1);
                 }
             };
@@ -1426,7 +1426,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
             match config.save(config_file_name.as_str()) {
                 Ok(_) => {}
                 Err(_) => {
-                    println!("Failed to save config with new master key");
+                    eprintln!("Failed to save config with new master key");
                     return ExitCode::from(1);
                 }
             };
@@ -1434,17 +1434,17 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
         if let Some(ref nodekey) = config.node_key {
             let now = chrono::Local::now().to_utc();
             if now > nodekey.replace_after {
-                println!("Node key is expired, discarding");
+                eprintln!("Node key is expired, discarding");
                 config.node_key = None;
             }
         }
         if let Some(ref nodekey) = config.node_key {
-            println!("Verifying the current node key");
+            eprintln!("Verifying the current node key");
             let public_key = match RsaPublicKey::from_pkcs1_der(
                 match config.master_key {
                     Some(ref master_key) => master_key,
                     None => {
-                        println!("Failed to load master key. Cannot verify node key.");
+                        eprintln!("Failed to load master key. Cannot verify node key.");
                         return ExitCode::from(1);
                     }
                 }
@@ -1453,14 +1453,14 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
             ) {
                 Ok(k) => Some(k),
                 Err(_) => {
-                    println!("Failed to deserialize node public key. Clearing node key.");
+                    eprintln!("Failed to deserialize node public key. Clearing node key.");
                     None
                 }
             };
             let signature = match Signature::try_from(nodekey.signature.as_slice()) {
                 Ok(s) => Some(s),
                 Err(_) => {
-                    println!("Failed to deserialize node signature. Clearing node key.");
+                    eprintln!("Failed to deserialize node signature. Clearing node key.");
                     None
                 }
             };
@@ -1472,7 +1472,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
                 match verifying_key.verify(nodekey.key.public_key.as_slice(), &signature) {
                     Ok(()) => println!("Node key is valid"),
                     Err(e) => {
-                        println!(
+                        eprintln!(
                             "Signature verification failed: {:?}. Clearing current node key.",
                             e
                         );
@@ -1493,7 +1493,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
                 let priv_key = match RsaPrivateKey::new(&mut rnd, bits) {
                     Ok(k) => k,
                     Err(_) => {
-                        println!("Failed to generate master key");
+                        eprintln!("Failed to generate master key");
                         return ExitCode::from(1);
                     }
                 };
@@ -1501,14 +1501,14 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
                 let priv_key_der = match priv_key.to_pkcs8_der() {
                     Ok(d) => d,
                     Err(_) => {
-                        println!("Failed to serialize master key as der");
+                        eprintln!("Failed to serialize master key as der");
                         return ExitCode::from(1);
                     }
                 };
                 let pub_key_der = match pub_key.to_pkcs1_der() {
                     Ok(d) => d,
                     Err(_) => {
-                        println!("Failed to serialize master key (public part) as der");
+                        eprintln!("Failed to serialize master key (public part) as der");
                         return ExitCode::from(1);
                     }
                 };
@@ -1523,7 +1523,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
                 match config.master_key {
                     Some(ref master_key) => master_key,
                     None => {
-                        println!("Failed to load master key. Cannot generate node key.");
+                        eprintln!("Failed to load master key. Cannot generate node key.");
                         return ExitCode::from(1);
                     }
                 }
@@ -1541,7 +1541,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
             match config.save(config_file_name.as_str()) {
                 Ok(_) => {}
                 Err(_) => {
-                    println!("Failed to save config with new master key");
+                    eprintln!("Failed to save config with new master key");
                     return ExitCode::from(1);
                 }
             };
@@ -1555,7 +1555,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
     let control_listener = match UnixListener::bind(socket_file_name.clone()) {
         Ok(l) => l,
         Err(_) => {
-            println!("failed to bind control socket: {}", socket_file_name);
+            eprintln!("failed to bind control socket: {}", socket_file_name);
             return ExitCode::from(1);
         }
     };
@@ -1577,7 +1577,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
     match unsafe { tap_dev.ioctl(libc::TUNSETIFF, &ifreq as *const TunIfreq) } {
         Ok(_) => {}
         Err(_) => {
-            println!("Failed to configure ethernet device: {}", name);
+            eprintln!("Failed to configure ethernet device: {}", name);
             return ExitCode::from(1);
         }
     }
@@ -1597,7 +1597,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
             (event_reader, event_writer) = match pipe() {
                 Ok(endpoints) => endpoints,
                 Err(_) => {
-                    println!("Failed to create pipe for event channel");
+                    eprintln!("Failed to create pipe for event channel");
                     return ExitCode::from(1);
                 }
             };
@@ -1640,7 +1640,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
                 })))
             }
             Err(_) => {
-                println!(
+                eprintln!(
                     "Failed to accept control connection on control socket: {}",
                     socket_file_name
                 );

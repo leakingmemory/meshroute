@@ -12,7 +12,7 @@ pub fn run_list_links(opts: &opts::Opts, name: &str) -> ExitCode {
     match control.command(controlproto::Command::ListLinks) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send request for the links list to control socket");
+            eprintln!("Failed to send request for the links list to control socket");
             return ExitCode::from(1);
         }
     };
@@ -21,18 +21,18 @@ pub fn run_list_links(opts: &opts::Opts, name: &str) -> ExitCode {
             Ok(match deserialize_from_slice::<LinksList>(buf) {
                 Ok(r) => r,
                 Err(_) => {
-                    println!("Failed to deserialize links list");
+                    eprintln!("Failed to deserialize links list");
                     return Err(());
                 }
             })
         } else {
-            println!("Links list request failed");
+            eprintln!("Links list request failed");
             Err(())
         }
     }) {
         Ok(opt) => opt,
         Err(_) => {
-            println!("Failed to receive the links list from control socket");
+            eprintln!("Failed to receive the links list from control socket");
             return ExitCode::from(1);
         }
     };
@@ -42,7 +42,7 @@ pub fn run_list_links(opts: &opts::Opts, name: &str) -> ExitCode {
     match control.command(controlproto::Command::Exit) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send exit command to control socket");
+            eprintln!("Failed to send exit command to control socket");
             return ExitCode::from(1);
         }
     };
@@ -67,7 +67,7 @@ pub fn run_addrem_link(
     ) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send request to control socket");
+            eprintln!("Failed to send request to control socket");
             return ExitCode::from(1);
         }
     };
@@ -75,13 +75,13 @@ pub fn run_addrem_link(
         if matches!(hdr.msg_type, ControlMsgType::GenericOk) {
             Ok(())
         } else {
-            println!("Add/remove link request failed");
+            eprintln!("Add/remove link request failed");
             return Err(());
         }
     }) {
         Ok(_) => {}
         Err(_) => {
-            println!("Add/remove link request failed");
+            eprintln!("Add/remove link request failed");
             return ExitCode::from(1);
         }
     };

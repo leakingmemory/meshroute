@@ -68,7 +68,7 @@ impl NodeKey {
         let replace_after = match chrono::DateTime::from_timestamp(base.replace_after, 0) {
             Some(t) => t,
             None => {
-                println!("Failed to parse replace_after timestamp");
+                eprintln!("Failed to parse replace_after timestamp");
                 return Err(());
             }
         };

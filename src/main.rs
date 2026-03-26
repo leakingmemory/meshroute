@@ -143,27 +143,27 @@ fn main() -> ExitCode {
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage:\n {} [options] daemon <name>\n", program);
-    print!("{}", &brief);
+    eprint!("{}", &brief);
     let brief = format!(" {} [options] listen <name> <addr:port>\n", program);
-    print!("{}", &brief);
+    eprint!("{}", &brief);
     let brief = format!(" {} [options] pair <name> <addr:port>\n", program);
-    print!("{}", &brief);
+    eprint!("{}", &brief);
     let brief = format!(" {} [options] list-pairing-requests <name>\n", program);
-    print!("{}", &brief);
+    eprint!("{}", &brief);
     let brief = format!(" {} [options] list-paired <name>\n", program);
-    print!("{}", &brief);
+    eprint!("{}", &brief);
     let brief = format!(" {} [options] pair <name> <addr:port>\n", program);
-    print!("{}", &brief);
+    eprint!("{}", &brief);
     let brief = format!(" {} [options] accept <name> <master-key>\n", program);
-    print!("{}", &brief);
+    eprint!("{}", &brief);
     let brief = format!(" {} [options] finish <name> <master-key>\n", program);
-    print!("{}", &brief);
+    eprint!("{}", &brief);
     let brief = format!(" {} [options] add-link <name> <addr:port>\n", program);
-    print!("{}", &brief);
+    eprint!("{}", &brief);
     let brief = format!(" {} [options] remove-link <name> <addr:port>\n", program);
-    print!("{}", &brief);
+    eprint!("{}", &brief);
     let brief = format!(" {} [options] list-links <name>\n", program);
-    print!("{}", &brief);
+    eprint!("{}", &brief);
     let brief = format!(" {} licenses\n", program);
-    print!("{}", opts.usage(&brief));
+    eprint!("{}", opts.usage(&brief));
 }

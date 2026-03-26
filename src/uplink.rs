@@ -224,7 +224,7 @@ fn update_all_uplinks(uplinks: &Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>) -> 
                         updated_count += 1;
                     }
                     Err(_) => {
-                        println!("Failed to send MyConnections update to an uplink");
+                        eprintln!("Failed to send MyConnections update to an uplink");
                     }
                 }
             }
@@ -266,7 +266,7 @@ pub fn forward_packet(
             match uplink.send_packet(packet) {
                 Ok(_) => {}
                 Err(_) => {
-                    println!("Failed to forward multicast packet to an uplink");
+                    eprintln!("Failed to forward multicast packet to an uplink");
                 }
             }
         }
@@ -295,7 +295,7 @@ pub fn forward_packet(
                         break; // Sent successfully, don't send over other direct links
                     }
                     Err(_) => {
-                        println!("Failed to forward unicast packet to a direct uplink");
+                        eprintln!("Failed to forward unicast packet to a direct uplink");
                     }
                 }
             }
@@ -332,7 +332,7 @@ pub fn forward_packet(
                             break; // Sent successfully, don't send over other indirect links
                         }
                         Err(_) => {
-                            println!("Failed to forward unicast packet to a reachable uplink");
+                            eprintln!("Failed to forward unicast packet to a reachable uplink");
                         }
                     }
                 }
@@ -385,7 +385,7 @@ pub fn run_uplink(
         let mut uplink_lock = current_uplink.lock().unwrap();
         let current_serial = serial.load(Ordering::SeqCst);
         if let Err(_) = uplink_lock.send_reset_serial(current_serial) {
-            println!("Failed to send ResetSerial message");
+            eprintln!("Failed to send ResetSerial message");
         }
     }
     uplink_change(&uplinks);
@@ -395,7 +395,7 @@ pub fn run_uplink(
         match endpoint.connection.read_exact(&mut len_buf) {
             Ok(_) => {}
             Err(_) => {
-                println!("Failed to read length of transmission");
+                eprintln!("Failed to read length of transmission");
                 break;
             }
         }
@@ -404,19 +404,19 @@ pub fn run_uplink(
         match endpoint.connection.read_exact(&mut buf) {
             Ok(_) => {}
             Err(_) => {
-                println!("Failed to read transmission");
+                eprintln!("Failed to read transmission");
                 break;
             }
         }
         match endpoint.endpoint_security.encryption_in.decrypt(&mut buf) {
             Ok(_) => {}
             Err(_) => {
-                println!("Failed to decrypt transmission");
+                eprintln!("Failed to decrypt transmission");
                 break;
             }
         }
         if buf.len() < 2 {
-            println!("Transmission too short for message type");
+            eprintln!("Transmission too short for message type");
             break;
         }
         let msg_type_bytes: [u8; 2] = [buf[0], buf[1]];
@@ -446,7 +446,7 @@ pub fn run_uplink(
                     uplink_change(&uplinks);
                 }
                 Err(_) => {
-                    println!("Failed to deserialize MyConnections message");
+                    eprintln!("Failed to deserialize MyConnections message");
                 }
             },
             PACKET => {
@@ -480,7 +480,7 @@ pub fn run_uplink(
                             match deserialize_from_slice(_msg.payload.as_slice()) {
                                 Ok(f) => Some(f),
                                 Err(_) => {
-                                    println!("Unable to decode frame from uplink");
+                                    eprintln!("Unable to decode frame from uplink");
                                     None
                                 }
                             }
@@ -526,7 +526,7 @@ pub fn run_uplink(
                                 match tap_dev.write_all(frame_to_raw(&frame).as_slice()) {
                                     Ok(_) => {}
                                     Err(_) => {
-                                        println!("Failed to write to virtual ethernet device");
+                                        eprintln!("Failed to write to virtual ethernet device");
                                     }
                                 };
                             }
@@ -536,7 +536,7 @@ pub fn run_uplink(
                         }
                     }
                     Err(_) => {
-                        println!("Failed to deserialize UplinkPacket message");
+                        eprintln!("Failed to deserialize UplinkPacket message");
                     }
                 }
             }
@@ -572,11 +572,11 @@ pub fn run_uplink(
                     }
                 }
                 Err(_) => {
-                    println!("Failed to deserialize ResetSerial message");
+                    eprintln!("Failed to deserialize ResetSerial message");
                 }
             },
             _ => {
-                println!("Received unknown uplink message type: {}", msg_type_u16);
+                eprintln!("Received unknown uplink message type: {}", msg_type_u16);
             }
         }
     }

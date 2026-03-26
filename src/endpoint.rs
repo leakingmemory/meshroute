@@ -60,12 +60,12 @@ impl Endpoint {
         match self.connection.write(self.buf.as_slice()) {
             Ok(s) => {
                 if s != self.buf.len() {
-                    println!("Connection write error, closing");
+                    eprintln!("Connection write error, closing");
                     return Err(());
                 }
             }
             Err(_) => {
-                println!("Connection write error, closing");
+                eprintln!("Connection write error, closing");
                 return Err(());
             }
         };
@@ -76,7 +76,7 @@ impl Endpoint {
         match self.connection.read_exact(self.buf.as_mut_slice()) {
             Ok(_) => {}
             Err(_) => {
-                println!("Connection read error, closing");
+                eprintln!("Connection read error, closing");
                 return Err(());
             }
         };
@@ -88,14 +88,14 @@ impl Endpoint {
         match self.connection.read_exact(self.buf.as_mut_slice()) {
             Ok(_) => {}
             Err(_) => {
-                println!("Connection read error, closing");
+                eprintln!("Connection read error, closing");
                 return Err(());
             }
         };
         match self.endpoint_security.encryption_in.decrypt(&mut self.buf) {
             Ok(_) => {}
             Err(_) => {
-                println!("Failed to decrypt message");
+                eprintln!("Failed to decrypt message");
                 return Err(());
             }
         };
@@ -111,7 +111,7 @@ impl Endpoint {
             UPLINK => EndpointMessage::Uplink,
             GENERIC_ERROR => EndpointMessage::GenericError,
             _ => {
-                println!("Unknown message type");
+                eprintln!("Unknown message type");
                 return Err(());
             }
         };

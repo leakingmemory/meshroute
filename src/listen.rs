@@ -13,14 +13,14 @@ pub fn run_listen(opts: &opts::Opts, name: &str, listen: &str) -> ExitCode {
     match control.command_with_object(controlproto::Command::Listen, &listen_cmd) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send listen command to control socket");
+            eprintln!("Failed to send listen command to control socket");
             return ExitCode::from(1);
         }
     };
     match control.command(controlproto::Command::Exit) {
         Ok(()) => {}
         Err(_) => {
-            println!("Failed to send exit command to control socket");
+            eprintln!("Failed to send exit command to control socket");
             return ExitCode::from(1);
         }
     };

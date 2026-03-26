@@ -21,25 +21,25 @@ pub fn connect_control(opts: &opts::Opts, name: &str) -> Result<ControlClient, (
     let mut stream = match UnixStream::connect(socket_file_name.clone()) {
         Ok(s) => s,
         Err(_) => {
-            println!("Failed to connect to control socket: {}", socket_file_name);
+            eprintln!("Failed to connect to control socket: {}", socket_file_name);
             return Err(());
         }
     };
     let mut lenbuf = [0u8; 4];
     if let Err(_) = stream.read_exact(&mut lenbuf) {
-        println!("Failed to read length for control protocol");
+        eprintln!("Failed to read length for control protocol");
         return Err(());
     }
     let mut buf: Vec<u8> = Vec::new();
     buf.resize(u32::from_be_bytes(lenbuf) as usize, 0u8);
     if let Err(_) = stream.read_exact(buf.as_mut_slice()) {
-        println!("Failed to read greeting for control protocol");
+        eprintln!("Failed to read greeting for control protocol");
         return Err(());
     }
     let greeting = match bson::deserialize_from_slice::<controlproto::Greeting>(buf.as_slice()) {
         Ok(g) => g,
         Err(_) => {
-            println!("Failed to deserialize greeting for control protocol");
+            eprintln!("Failed to deserialize greeting for control protocol");
             return Err(());
         }
     };

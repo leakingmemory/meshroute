@@ -11,7 +11,7 @@ impl KeyAndNonce {
         let cipher = match ChaCha20Poly1305::new_from_slice(&key) {
             Ok(c) => c,
             Err(_) => {
-                println!("Failed to create cipher");
+                eprintln!("Failed to create cipher");
                 return Err(());
             }
         };
