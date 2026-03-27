@@ -245,46 +245,17 @@ pub fn forward_packet(
     let mut uplinks_lock = uplinks.lock().unwrap().clone();
     let mut rng = thread_rng();
     uplinks_lock.shuffle(&mut rng);
+
     let multicast = packet.destination.is_empty();
+    let mut sent = false;
 
-    if multicast {
-        for uplink_arc in &uplinks_lock {
-            let mut uplink = uplink_arc.lock().unwrap();
-
-            // Don't send to any uplink that is in the trail-list
-            let mut in_trail = false;
-            for t in &packet.trail {
-                if *t == uplink.remote_endpoint_hash {
-                    in_trail = true;
-                    break;
-                }
-            }
-            if in_trail {
-                continue;
-            }
-
-            match uplink.send_packet(packet) {
-                Ok(_) => {}
-                Err(_) => {
-                    eprintln!("Failed to forward multicast packet to an uplink");
-                }
-            }
-        }
-    } else {
+    if !multicast {
         // Unicast: check for direct links first
-        let mut sent = false;
         for uplink_arc in &uplinks_lock {
             let mut uplink = uplink_arc.lock().unwrap();
 
             // Don't send to any uplink that is in the trail-list
-            let mut in_trail = false;
-            for t in &packet.trail {
-                if *t == uplink.remote_endpoint_hash {
-                    in_trail = true;
-                    break;
-                }
-            }
-            if in_trail {
+            if packet.trail.contains(&uplink.remote_endpoint_hash) {
                 continue;
             }
 
@@ -307,34 +278,39 @@ pub fn forward_packet(
                 let mut uplink = uplink_arc.lock().unwrap();
 
                 // Don't send to any uplink that is in the trail-list
-                let mut in_trail = false;
-                for t in &packet.trail {
-                    if *t == uplink.remote_endpoint_hash {
-                        in_trail = true;
-                        break;
-                    }
-                }
-                if in_trail {
+                if packet.trail.contains(&uplink.remote_endpoint_hash) {
                     continue;
                 }
 
-                let mut matches = false;
-                for r in &uplink.reachable_endpoints {
-                    if *r == packet.destination {
-                        matches = true;
-                        break;
-                    }
-                }
-
-                if matches {
+                if uplink.reachable_endpoints.contains(&packet.destination) {
                     match uplink.send_packet(packet) {
                         Ok(_) => {
+                            sent = true;
                             break; // Sent successfully, don't send over other indirect links
                         }
                         Err(_) => {
                             eprintln!("Failed to forward unicast packet to a reachable uplink");
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // If it was multicast originally, or if unicast could not find a link, treat as multicast
+    if multicast || !sent {
+        for uplink_arc in &uplinks_lock {
+            let mut uplink = uplink_arc.lock().unwrap();
+
+            // Don't send to any uplink that is in the trail-list
+            if packet.trail.contains(&uplink.remote_endpoint_hash) {
+                continue;
+            }
+
+            match uplink.send_packet(packet) {
+                Ok(_) => {}
+                Err(_) => {
+                    eprintln!("Failed to forward multicast packet to an uplink");
                 }
             }
         }
