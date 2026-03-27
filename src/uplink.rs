@@ -122,6 +122,33 @@ impl Uplink {
             Err(_) => Err(()),
         }
     }
+
+    pub fn send_keepalive(&mut self) -> Result<(), ()> {
+        let msg = KeepAlive {};
+        let mut msg_body = match serialize_to_vec(&msg) {
+            Ok(b) => b,
+            Err(_) => return Err(()),
+        };
+        let mut buf = Vec::with_capacity(msg_body.len() + 2);
+        let msg_type = UplinkMsgType::KEEPALIVE as u16;
+        buf.extend_from_slice(&msg_type.to_be_bytes());
+        buf.append(&mut msg_body);
+
+        match self.encryption_out.encrypt(&mut buf) {
+            Ok(_) => {}
+            Err(_) => return Err(()),
+        }
+
+        let mut final_buf = Vec::with_capacity(buf.len() + 4);
+        let msg_len = buf.len() as u32;
+        final_buf.extend_from_slice(&msg_len.to_be_bytes());
+        final_buf.extend_from_slice(&buf);
+
+        match self.connection.write_all(&final_buf) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
+    }
 }
 
 #[repr(u16)]
@@ -131,7 +158,11 @@ enum UplinkMsgType {
     MY_CONNECTIONS = 0,
     PACKET = 1,
     RESET_SERIAL = 2,
+    KEEPALIVE = 3,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct KeepAlive {}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MyConnections {
@@ -236,6 +267,19 @@ fn update_all_uplinks(uplinks: &Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>) -> 
 
 fn uplink_change(uplinks: &Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>) {
     while update_all_uplinks(uplinks) > 0 {}
+}
+
+pub fn send_all_keepalives(uplinks: &Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>) {
+    let uplinks_lock = uplinks.lock().unwrap().clone();
+    for uplink_arc in &uplinks_lock {
+        let mut uplink = uplink_arc.lock().unwrap();
+        match uplink.send_keepalive() {
+            Ok(_) => {}
+            Err(_) => {
+                eprintln!("Failed to send keepalive to an uplink");
+            }
+        }
+    }
 }
 
 pub fn forward_packet(
@@ -401,8 +445,12 @@ pub fn run_uplink(
         const MY_CONNECTIONS: u16 = UplinkMsgType::MY_CONNECTIONS as u16;
         const PACKET: u16 = UplinkMsgType::PACKET as u16;
         const RESET_SERIAL: u16 = UplinkMsgType::RESET_SERIAL as u16;
+        const KEEPALIVE: u16 = UplinkMsgType::KEEPALIVE as u16;
 
         match msg_type_u16 {
+            KEEPALIVE => {
+                println!("Keepalive message received");
+            }
             MY_CONNECTIONS => match deserialize_from_slice::<MyConnections>(&buf[2..]) {
                 Ok(msg) => {
                     println!(

@@ -915,6 +915,18 @@ impl WorkerContext {
             masterkey_hash.clone(),
         );
         let tap_dev = Arc::new(Mutex::new(self.tap_dev.clone()));
+
+        // Start keepalive thread
+        {
+            let uplinks = uplinks.clone();
+            thread::spawn(move || {
+                loop {
+                    thread::sleep(Duration::from_secs(30));
+                    uplink::send_all_keepalives(&uplinks);
+                }
+            });
+        }
+
         if let Some(listen_addr) = listen_addr {
             eprintln!("Listening on tcp {}", listen_addr);
             let listen_socket = match TcpListener::bind(listen_addr.as_str()) {
