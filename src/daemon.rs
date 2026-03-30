@@ -240,7 +240,21 @@ fn handle_control(
                     }
                 };
                 let mut connection = match TcpStream::connect(pair_ctrl.addr.as_str()) {
-                    Ok(c) => c,
+                    Ok(c) => {
+                        if let Err(_) = c.set_read_timeout(Some(Duration::from_secs(60))) {
+                            eprintln!("Failed to set read timeout on connection to {}", pair_ctrl.addr);
+                            match write_control(&mut stream, controlproto::ControlMsgType::GenericError)
+                            {
+                                Ok(_) => {}
+                                Err(_) => {
+                                    eprintln!("Failed to write control response");
+                                    return;
+                                }
+                            };
+                            return;
+                        }
+                        c
+                    }
                     Err(_) => {
                         eprintln!("Failed to connect to {} for pairing.", pair_ctrl.addr);
                         match write_control(&mut stream, controlproto::ControlMsgType::GenericError)
@@ -951,7 +965,13 @@ impl WorkerContext {
                     let mut client_threads: Vec<thread::JoinHandle<()>> = Vec::new();
                     for connection in listen_socket.incoming() {
                         let mut connection = match connection {
-                            Ok(c) => c,
+                            Ok(c) => {
+                                if let Err(_) = c.set_read_timeout(Some(Duration::from_secs(60))) {
+                                    eprintln!("Failed to set read timeout on connection");
+                                    continue;
+                                }
+                                c
+                            }
                             Err(_) => {
                                 eprintln!("Handling connection listening failed");
                                 break;
@@ -1173,7 +1193,14 @@ impl WorkerContext {
                 loop {
                     println!("Opening connection {}", link_from_config);
                     let mut connection = match TcpStream::connect(link_from_config.as_str()) {
-                        Ok(c) => c,
+                        Ok(c) => {
+                            if let Err(_) = c.set_read_timeout(Some(Duration::from_secs(60))) {
+                                eprintln!("Failed to set read timeout on connection to {}", link_from_config);
+                                thread::sleep(Duration::from_secs(10));
+                                continue;
+                            }
+                            c
+                        }
                         Err(_) => {
                             eprintln!("Failed to connect to {}", link_from_config);
                             thread::sleep(Duration::from_secs(1));

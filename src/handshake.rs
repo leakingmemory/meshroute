@@ -414,6 +414,10 @@ pub fn run_server_handshake(
     connection: &mut TcpStream,
     config: &Arc<Mutex<config::Config>>,
 ) -> Result<EndpointSecurity, ()> {
+    if let Err(_) = connection.set_read_timeout(Some(std::time::Duration::from_secs(60))) {
+        eprintln!("Failed to set read timeout on connection");
+        return Err(());
+    }
     match send_pubkeys(connection, config, PROTO_VERSION_MAJOR, PROTO_VERSION_MINOR) {
         Ok(_) => {}
         Err(_) => return Err(()),
@@ -478,6 +482,10 @@ pub fn run_client_handshake(
     connection: &mut TcpStream,
     config: &Arc<Mutex<config::Config>>,
 ) -> Result<EndpointSecurity, ()> {
+    if let Err(_) = connection.set_read_timeout(Some(std::time::Duration::from_secs(60))) {
+        eprintln!("Failed to set read timeout on connection");
+        return Err(());
+    }
     let mut recv_pkeys = match recv_pubkeys(connection) {
         Ok(r) => r,
         Err(_) => return Err(()),

@@ -377,6 +377,10 @@ pub fn run_uplink(
     serial: Arc<AtomicU32>,
 ) {
     println!("Run uplink");
+    if let Err(_) = endpoint.connection.set_read_timeout(Some(std::time::Duration::from_secs(60))) {
+        eprintln!("Failed to set read timeout on connection");
+        return;
+    }
     let current_uplink = Arc::new(Mutex::new(uplink::Uplink::new(
         endpoint.connection.try_clone().unwrap(),
         endpoint.endpoint_security.encryption_out.clone(),
