@@ -242,9 +242,14 @@ fn handle_control(
                 let mut connection = match TcpStream::connect(pair_ctrl.addr.as_str()) {
                     Ok(c) => {
                         if let Err(_) = c.set_read_timeout(Some(Duration::from_secs(60))) {
-                            eprintln!("Failed to set read timeout on connection to {}", pair_ctrl.addr);
-                            match write_control(&mut stream, controlproto::ControlMsgType::GenericError)
-                            {
+                            eprintln!(
+                                "Failed to set read timeout on connection to {}",
+                                pair_ctrl.addr
+                            );
+                            match write_control(
+                                &mut stream,
+                                controlproto::ControlMsgType::GenericError,
+                            ) {
                                 Ok(_) => {}
                                 Err(_) => {
                                     eprintln!("Failed to write control response");
@@ -1195,7 +1200,10 @@ impl WorkerContext {
                     let mut connection = match TcpStream::connect(link_from_config.as_str()) {
                         Ok(c) => {
                             if let Err(_) = c.set_read_timeout(Some(Duration::from_secs(60))) {
-                                eprintln!("Failed to set read timeout on connection to {}", link_from_config);
+                                eprintln!(
+                                    "Failed to set read timeout on connection to {}",
+                                    link_from_config
+                                );
                                 thread::sleep(Duration::from_secs(10));
                                 continue;
                             }
