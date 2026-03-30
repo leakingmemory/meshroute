@@ -1,6 +1,6 @@
 use crate::{config, encryption};
-use rand::RngCore;
 use rsa::oaep::{DecryptingKey, EncryptingKey};
+use rsa::rand_core::{OsRng, RngCore};
 use rsa::pkcs1::DecodeRsaPublicKey;
 use rsa::pkcs1v15::{Signature, SigningKey, VerifyingKey};
 use rsa::pkcs8::DecodePrivateKey;
@@ -45,7 +45,7 @@ pub fn encrypt(data: &[u8], pubkey: &[u8]) -> Result<Vec<u8>, ()> {
         }
     };
     let encrypting_key = EncryptingKey::<sha2::Sha256>::new(pubkey);
-    let mut rng = rand::thread_rng();
+    let mut rng = OsRng;
     let encrypted = match encrypting_key.encrypt_with_rng(&mut rng, data) {
         Ok(e) => e,
         Err(_) => {
@@ -237,7 +237,7 @@ fn send_init(
             let block_of_material_size = pubkey.size() - 66;
             let mut block_of_material: Vec<u8> = Vec::new();
             block_of_material.resize(block_of_material_size, 0);
-            let mut rng = rand::thread_rng();
+            let mut rng = OsRng;
             rng.fill_bytes(block_of_material.as_mut_slice());
             keys = match generate_key_and_nonce(block_of_material.as_slice()) {
                 Ok(k) => k,

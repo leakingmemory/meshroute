@@ -1,8 +1,8 @@
 use crate::ethernet::EthernetAddress;
 use crate::{endpoint, ethernet, ethertable, filedes, serialwindow, uplink};
 use bson::{deserialize_from_slice, serialize_to_vec};
+use rand::rng;
 use rand::seq::SliceRandom;
-use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
@@ -287,7 +287,7 @@ pub fn forward_packet(
     uplinks: &Arc<Mutex<Vec<Arc<Mutex<uplink::Uplink>>>>>,
 ) {
     let mut uplinks_lock = uplinks.lock().unwrap().clone();
-    let mut rng = thread_rng();
+    let mut rng = rng();
     uplinks_lock.shuffle(&mut rng);
 
     let multicast = packet.destination.is_empty();
