@@ -3,11 +3,33 @@ use rsa::oaep::{DecryptingKey, EncryptingKey};
 use rsa::pkcs1::DecodeRsaPublicKey;
 use rsa::pkcs1v15::{Signature, SigningKey, VerifyingKey};
 use rsa::pkcs8::DecodePrivateKey;
-use rsa::rand_core::{OsRng, RngCore};
+use rsa::rand_core::{TryCryptoRng, TryRng, Infallible, Rng};
 use rsa::signature::{SignatureEncoding, Signer, Verifier};
 use rsa::traits::{Decryptor, PublicKeyParts, RandomizedEncryptor};
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use sha2::Digest;
+
+pub struct RsaRng;
+
+impl TryRng for RsaRng {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(rand::random())
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        Ok(rand::random())
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Self::Error> {
+        rand::fill(dest);
+        Ok(())
+    }
+}
+
+impl TryCryptoRng for RsaRng {}
+// CryptoRng is automatically implemented for any T that implements TryCryptoRng and TryRng with Error = Infallible.
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
@@ -45,7 +67,7 @@ pub fn encrypt(data: &[u8], pubkey: &[u8]) -> Result<Vec<u8>, ()> {
         }
     };
     let encrypting_key = EncryptingKey::<sha2::Sha256>::new(pubkey);
-    let mut rng = OsRng;
+    let mut rng = RsaRng;
     let encrypted = match encrypting_key.encrypt_with_rng(&mut rng, data) {
         Ok(e) => e,
         Err(_) => {
@@ -237,7 +259,7 @@ fn send_init(
             let block_of_material_size = pubkey.size() - 66;
             let mut block_of_material: Vec<u8> = Vec::new();
             block_of_material.resize(block_of_material_size, 0);
-            let mut rng = OsRng;
+            let mut rng = RsaRng;
             rng.fill_bytes(block_of_material.as_mut_slice());
             keys = match generate_key_and_nonce(block_of_material.as_slice()) {
                 Ok(k) => k,

@@ -10,6 +10,7 @@ use crate::{
     opts, serialwindow, uplink,
 };
 use bson::{deserialize_from_slice, serialize_to_vec};
+use handshake::RsaRng;
 use rsa::pkcs1::{DecodeRsaPublicKey, EncodeRsaPublicKey};
 use rsa::pkcs1v15::Signature;
 use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey};
@@ -1440,7 +1441,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
         let mut config = config.lock().unwrap();
         if config.master_key.is_none() {
             eprintln!("Generating master key for this node");
-            let mut rnd = rsa::rand_core::OsRng;
+            let mut rnd = RsaRng;
             let bits = 4096;
             let priv_key = match RsaPrivateKey::new(&mut rnd, bits) {
                 Ok(k) => k,
@@ -1535,7 +1536,7 @@ pub fn run_daemon_w(restart_me_writer: &mut PipeWriter, opts: &opts::Opts, name:
             let nodekey;
             {
                 println!("Generating a new node key");
-                let mut rnd = rsa::rand_core::OsRng;
+                let mut rnd = RsaRng;
                 let bits = 3072;
                 let priv_key = match RsaPrivateKey::new(&mut rnd, bits) {
                     Ok(k) => k,
