@@ -3619,7 +3619,7 @@ limitations under the License.
 ================================================================================
 
 ================================================================================
-chrono@0.4.44: MIT OR Apache-2.0 (LICENSE.txt)
+chrono@0.4.45: MIT OR Apache-2.0 (LICENSE.txt)
 --------------------------------------------------------------------------------
 Rust-chrono is dual-licensed under The MIT License [1] and
 Apache 2.0 License [2]. Copyright (c) 2014--2026, Kang Seonghoon and
