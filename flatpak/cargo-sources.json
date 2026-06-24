@@ -236,14 +236,14 @@
   {
     "type": "archive",
     "archive-type": "tar-gzip",
-    "url": "https://static.crates.io/crates/chrono/chrono-0.4.44.crate",
-    "sha256": "c673075a2e0e5f4a1dde27ce9dee1ea4558c7ffe648f576438a20ca1d2acc4b0",
-    "dest": "cargo/vendor/chrono-0.4.44"
+    "url": "https://static.crates.io/crates/chrono/chrono-0.4.45.crate",
+    "sha256": "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327",
+    "dest": "cargo/vendor/chrono-0.4.45"
   },
   {
     "type": "inline",
-    "contents": "{\"package\": \"c673075a2e0e5f4a1dde27ce9dee1ea4558c7ffe648f576438a20ca1d2acc4b0\", \"files\": {}}",
-    "dest": "cargo/vendor/chrono-0.4.44",
+    "contents": "{\"package\": \"1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327\", \"files\": {}}",
+    "dest": "cargo/vendor/chrono-0.4.45",
     "dest-filename": ".cargo-checksum.json"
   },
   {
